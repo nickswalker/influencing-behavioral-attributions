@@ -1,0 +1,19 @@
+{
+"compilerOptions": {
+"module": "es6",
+"moduleResolution": "node",
+"target": "es2016",
+"removeComments": true,
+"preserveConstEnums": true,
+"sourceRoot": "./src/",
+"rootDir": "./src/",
+"outDir": "build",
+"declaration": true,
+  "noImplicitAny": true,
+"sourceMap": true,
+  "typeRoots": ["node_modules/@types", "node_modules/phaser/types"]
+},
+"exclude": [
+"build"
+]
+}
