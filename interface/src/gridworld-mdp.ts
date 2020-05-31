@@ -9,14 +9,17 @@ export enum Direction {
     WEST
 }
 
+const transition = new Map([[Direction.NORTH, [0, 1]], [Direction.SOUTH, [0, -1]], [Direction.EAST, [1, 0]], [Direction.WEST, [-1, 0]]])
+
 export class GridworldState {
-    agentPosition: Position
-    constructor(agentPosition: Position) {
-        this.agentPosition = agentPosition
+    agentPositions: Position[]
+    constructor(agentPosition: Position[]) {
+        this.agentPositions = agentPosition
     }
 
     deepcopy() {
-        return new GridworldState(this.agentPosition)
+        const clonedPositions = JSON.parse(JSON.stringify(this.agentPositions));
+        return new GridworldState(clonedPositions)
     }
 
 }
@@ -28,7 +31,7 @@ export enum TerrainType {
     Goal
 }
 
-export const characterToTerrainType: {[key: string]: TerrainType} = {"-": TerrainType.Empty, " ": TerrainType.Empty, "X": TerrainType.Wall, "F": TerrainType.Fire, "O": TerrainType.Goal}
+export const characterToTerrainType: {[key: string]: TerrainType} = {"-": TerrainType.Empty, " ": TerrainType.Empty, "X": TerrainType.Wall, "F": TerrainType.Fire, "G": TerrainType.Goal}
 
 export function textToTerrain(grid: string[]) {
     const asChar = grid.map((r) => [...r])
@@ -38,10 +41,10 @@ export function textToTerrain(grid: string[]) {
         terrain[y] = []
         for (let x = 0; x < grid[0].length; x++) {
             let c: string = asChar[y][x]
-            const asNum = Number(c)
-            if (asNum) {
+            const asNum = parseInt(c)
+            if (typeof(asNum) !== "undefined" && !isNaN(asNum)) {
                 if (playerPositions[asNum]) {
-                    console.error("Duplicate player in grid")
+                    console.error("Duplicate player in grid: " + asNum + " at " + x + ", " + y)
                     throw new RuntimeError()
                 }
                 playerPositions[asNum] = {x: x, y:y}
@@ -63,11 +66,30 @@ export type TerrainMap = TerrainType[][]
 
 export class Gridworld {
     terrain: TerrainMap
+    height: number
+    width: number
     constructor(terrain: TerrainMap) {
         this.terrain = terrain
+        this.width = this.terrain[0].length
+        this.height = this.terrain.length
     }
 
     getStartState() {
-        return new GridworldState({x: 0, y: 0})
+        return new GridworldState([{x: 1, y: 1}])
+    }
+
+    transition(state: GridworldState, action: Direction) : GridworldState {
+        const nextState = state.deepcopy();
+        const curPosition = nextState.agentPositions[0];
+        const [dx, dy] = transition.get(action);
+        curPosition.x += dx;
+        curPosition.y += dy;
+        curPosition.x = Math.max(0, Math.min(curPosition.x, this.width))
+        curPosition.y = Math.max(0, Math.min(curPosition.y, this.height))
+        if (this.terrain[curPosition.y][curPosition.x] == TerrainType.Wall) {
+            return state.deepcopy();
+        }
+        nextState.agentPositions[0] = curPosition
+        return nextState
     }
 }
