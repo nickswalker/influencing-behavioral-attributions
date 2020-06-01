@@ -1,5 +1,5 @@
 import "phaser"
-import {Gridworld, GridworldState, TerrainMap, TerrainType} from "./gridworld-mdp"
+import {Direction, Gridworld, GridworldState, TerrainMap, TerrainType} from "./gridworld-mdp"
 
 const sceneConfig: Phaser.Types.Scenes.SettingsConfig = {
     active: false,
@@ -25,10 +25,7 @@ export class GridworldGame {
         tileSize = 128,
         gameWidth = tileSize*start_grid[0].length,
         gameHeight = tileSize*start_grid.length,
-        ANIMATION_DURATION = 500,
-        TIMESTEP_DURATION = 600,
         assetsLoc = "./assets/",
-
     ) {
         this.gameWidth = gameWidth;
         this.gameHeight = gameHeight;
@@ -59,8 +56,10 @@ export class GridworldGame {
         this._stateToDraw = state;
     }
 
-    setAction(player_index: number, action: any) {
-
+    setAction(player_index: number, action: Direction) {
+        const nextState = this.mdp.transition(this.state, action);
+        this._stateToDraw = nextState;
+        this.state = nextState
     }
 
     drawScore(score: number) {
@@ -87,22 +86,29 @@ export class GridworldScene extends Phaser.Scene {
     tileSize: number
     sceneSprite: object
     mdp: Gridworld
-    constructor(gameParent: GridworldGame, tileSize: number) {
+    interactive: boolean
+    inputDelayTimeout: Phaser.Time.TimerEvent
+    ANIMATION_DURATION = 500
+    TIMESTEP_DURATION = 600
+    constructor(gameParent: GridworldGame, tileSize: number, interactive: boolean = true) {
         super(sceneConfig);
         this.gameParent = gameParent
         this.tileSize = tileSize
-        this.mdp = this.gameParent.mdp;
+        this.mdp = this.gameParent.mdp
+        this.interactive = interactive
+        this.inputDelayTimeout = null
     }
 
     preload() {
         this.load.atlas("tiles",
             this.gameParent.assetsPath+"tiles.png",
             this.gameParent.assetsPath+"tiles.json");
+        this.load.image("agent", this.gameParent.assetsPath+"agent.png")
     }
     create(data: object) {
         this.sceneSprite = {};
         this.drawLevel();
-        //this._drawState(this.gameParent.state, this.sprites);
+        this._drawState(this.gameParent.state, this.sceneSprite);
     }
     drawLevel() {
         //draw tiles
@@ -129,7 +135,31 @@ export class GridworldScene extends Phaser.Scene {
     }
     _drawState(state: GridworldState, sprites: SpriteMap) {
         sprites = typeof(sprites) === 'undefined' ? {} : sprites;
+        sprites["agents"] = typeof(sprites["agents"]) === 'undefined' ? {} : sprites["agents"];
+        for (let p = 0; p < state.agentPositions.length; p++){
+            const agentPosition = state.agentPositions[p]
+            // Flip Y to make lower-left the origin
+            let [drawX, drawY] = [agentPosition.x, this.mdp.height - agentPosition.y - 1]
+            if (typeof(sprites['agents'][p]) === 'undefined') {
+                const agent = this.add.sprite(this.tileSize * drawX, this.tileSize * drawY, "agent");
+                agent.setDisplaySize(this.tileSize, this.tileSize)
+                agent.setOrigin(0)
+                sprites['agents'][p] = agent;
+            } else {
+                const agent = sprites['agents'][p]
+                this.tweens.add({
+                    targets: [agent],
+                    x: this.tileSize*drawX,
+                    y: this.tileSize*drawY,
+                    duration: this.ANIMATION_DURATION,
+                    ease: 'Linear',
+                    onComplete: (tween, target, player) => {
+                        target[0].setPosition(this.tileSize*drawX, this.tileSize*drawY);
+                    }
+                })
+            }
 
+        }
     }
 
     _drawScore(score: number, sprites: SpriteMap) {
@@ -165,9 +195,29 @@ export class GridworldScene extends Phaser.Scene {
         }
     }
     update(time: number, delta: number) {
-        return
-        if (typeof(this.gameParent.state) !== 'undefined') {
-            let state = this.gameParent.state;
+        if (this.inputDelayTimeout && this.inputDelayTimeout.getOverallProgress() == 1.0) {
+            this.inputDelayTimeout = null
+        }
+        const acceptingInput = this.inputDelayTimeout == null
+        if (this.interactive && acceptingInput) {
+            const cursors = this.input.keyboard.createCursorKeys();
+            let action: Direction = null
+            if (cursors.left.isDown) {
+                action = Direction.WEST
+            } else if (cursors.right.isDown) {
+                action = Direction.EAST
+            } else if (cursors.up.isDown) {
+                action = Direction.NORTH
+            } else if (cursors.down.isDown) {
+                action = Direction.SOUTH
+            }
+            if (action !== null) {
+                this.gameParent.setAction(0, action)
+                this.inputDelayTimeout = this.time.addEvent({delay: 500})
+            }
+        }
+        if (typeof(this.gameParent._stateToDraw) !== 'undefined') {
+            let state = this.gameParent._stateToDraw;
             delete this.gameParent._stateToDraw;
             // redraw = true;
             this._drawState(state, this.sceneSprite);
