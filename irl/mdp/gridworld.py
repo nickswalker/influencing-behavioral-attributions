@@ -28,6 +28,11 @@ class Gridworld(object):
         self.wind = wind
         self.discount = discount
 
+        # FIXME(nickswalker): Only works with ident state features
+        self.reward_weights = np.zeros(self.n_states)
+        # Default task is to get to the other corner
+        self.reward_weights[-1] = 1
+
         # Preconstruct the transition probability array.
         self.transition_probability = np.array(
             [[[self._transition_probability(i, j, k)
@@ -63,10 +68,26 @@ class Gridworld(object):
                     dist = abs(x - a) + abs(y - b)
                     f[self.point_to_int((a, b))] = dist
             return f
-        # Assume identity map.
-        f = np.zeros(self.n_states)
-        f[i] = 1
-        return f
+        if feature_map == "ident":
+            f = np.zeros(self.n_states)
+            f[i] = 1
+            return f
+        if feature_map == "gdist":
+            f = np.zeros(2)
+            x, y = i % self.grid_size, i // self.grid_size
+            f[0] = x
+            f[1] = y
+            return f
+        raise RuntimeError("Unknown feature map")
+
+    def num_state_features(self, feature_map="ident"):
+        if feature_map == "ident":
+            return self.n_states
+        if feature_map == "coord":
+            return self.grid_size
+        if feature_map == "proxi":
+            return self.n_states
+        raise RuntimeError("Unknown feature map")
 
     def feature_matrix(self, feature_map="ident"):
         """
@@ -90,7 +111,6 @@ class Gridworld(object):
         i: State int.
         -> (x, y) int tuple.
         """
-
         return (i % self.grid_size, i // self.grid_size)
 
     def point_to_int(self, p):
@@ -176,17 +196,18 @@ class Gridworld(object):
                 # We can blow off the grid only by wind.
                 return self.wind/self.n_actions
 
-    def reward(self, state_int):
+    def reward(self, state: int, feature_map="ident"):
         """
         Reward for being in state state_int.
 
         state_int: State integer. int.
         -> Reward.
         """
-
-        if state_int == self.n_states - 1:
-            return 1
-        return 0
+        if feature_map == "ident":
+            features = self.feature_vector(state, feature_map)
+            return features.dot(self.reward_weights)
+        else:
+            raise NotImplementedError()
 
     def average_reward(self, n_trajectories, trajectory_length, policy):
         """
@@ -289,3 +310,11 @@ class Gridworld(object):
             trajectories.append(trajectory)
 
         return np.array(trajectories)
+
+    def print_trajectory(self, traj):
+        states, actions, rewards = traj[:, 0].astype(np.int), traj[:, 1].astype(np.int), traj[:, 2]
+        for s, a, r in zip(states, actions, rewards):
+            x, y = self.int_to_point(s)
+            a = ["right", "up","left", "down"][a]
+            print("({}, {})".format(x, y), a, r)
+        print("Return: {}".format(np.sum(rewards)))
