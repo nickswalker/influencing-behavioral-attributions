@@ -1,3 +1,4 @@
 cvxopt
 flask
 flask-socketio
+matplotlib

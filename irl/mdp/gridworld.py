@@ -87,6 +87,8 @@ class Gridworld(object):
             return self.grid_size
         if feature_map == "proxi":
             return self.n_states
+        if feature_map == "gdist":
+            return 2
         raise RuntimeError("Unknown feature map")
 
     def feature_matrix(self, feature_map="ident"):

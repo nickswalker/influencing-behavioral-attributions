@@ -20,6 +20,7 @@ class HugsWall:
             return self.p_behavior_given_theta_ident(theta)
         if feature_map == "coord":
             return self.p_behavior_given_theta_coord(theta)
+        raise NotImplementedError()
 
     def p_behavior_given_theta_coord(self, theta):
         return [1, 0]
