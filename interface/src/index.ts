@@ -1,42 +1,13 @@
 import "./gridworld-mdp"
 import "./gridworld-game"
+import "./gridworld-elements"
 import {Direction, TerrainMap, textToTerrain} from "./gridworld-mdp";
 import {GridworldGame} from "./gridworld-game";
 import * as io from "socket.io-client"
 
-let [n, s, e, w] = [Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST];
 
-let terrain: {terrain: TerrainMap} = textToTerrain([
-    'XXXXXXX',
-    'X    GX',
-    'X-----X',
-    'X-----X',
-    'X-----X',
-    'X0----X',
-    'XXXXXXX'
-])
-console.log(terrain)
-let game = new GridworldGame(terrain["terrain"],
-    document.getElementById("task")
-)
+let game = document.getElementById("player")
 
-game.init();
-let atraj = [n, s, e, w]
-let state = game.mdp.getStartState();
-
-const start_i = 0
-for (let i = 0; i < atraj.length; i++) {
-    const statei = state.deepcopy();
-    statei.agentPositions[0].x = i
-    setTimeout(((state) => {
-        return () => {
-            //console.log(state)
-            //game.drawState(state);
-        }
-    })(statei), 1000 + 750 * i);
-
-
-}
 function f() {
     const socket = io("http://127.0.0.1:5000");
     socket.on('connect', function() {

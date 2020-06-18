@@ -8,6 +8,7 @@ export enum Direction {
     SOUTH,
     WEST
 }
+let [n, s, e, w] = [Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST];
 
 const transition = new Map([[Direction.NORTH, [0, 1]], [Direction.SOUTH, [0, -1]], [Direction.EAST, [1, 0]], [Direction.WEST, [-1, 0]]])
 

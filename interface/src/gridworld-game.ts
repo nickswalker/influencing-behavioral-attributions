@@ -1,5 +1,5 @@
 import "phaser"
-import {Direction, Gridworld, GridworldState, TerrainMap, TerrainType} from "./gridworld-mdp"
+import {Direction, Gridworld, GridworldState, TerrainMap, TerrainType, textToTerrain} from "./gridworld-mdp"
 
 const sceneConfig: Phaser.Types.Scenes.SettingsConfig = {
     active: false,
@@ -19,6 +19,7 @@ export class GridworldGame {
     _stateToDraw: GridworldState
     _scoreToDraw: number
     _timeToDraw: number
+    _animated: boolean;
     constructor (
         start_grid: TerrainMap,
         container: HTMLElement,
@@ -52,8 +53,9 @@ export class GridworldGame {
         this.game = new Phaser.Game(gameConfig);
     }
 
-    drawState(state: GridworldState) {
+    drawState(state: GridworldState, animated: boolean = true) {
         this._stateToDraw = state;
+        this._animated = animated
     }
 
     setAction(player_index: number, action: Direction) {
@@ -133,7 +135,10 @@ export class GridworldScene extends Phaser.Scene {
             }
         }
     }
-    _drawState(state: GridworldState, sprites: SpriteMap) {
+    _drawState(state: GridworldState, sprites: SpriteMap, animated: boolean = true) {
+        // States are supposed to be fed at regular, spaced intervals, so no tweens are running usually.
+        // We'll kill everything for situations where we are responding to a hard state override
+        this.tweens.killAll()
         sprites = typeof(sprites) === 'undefined' ? {} : sprites;
         sprites["agents"] = typeof(sprites["agents"]) === 'undefined' ? {} : sprites["agents"];
         for (let p = 0; p < state.agentPositions.length; p++){
@@ -147,16 +152,20 @@ export class GridworldScene extends Phaser.Scene {
                 sprites['agents'][p] = agent;
             } else {
                 const agent = sprites['agents'][p]
-                this.tweens.add({
-                    targets: [agent],
-                    x: this.tileSize*drawX,
-                    y: this.tileSize*drawY,
-                    duration: this.ANIMATION_DURATION,
-                    ease: 'Linear',
-                    onComplete: (tween, target, player) => {
-                        target[0].setPosition(this.tileSize*drawX, this.tileSize*drawY);
-                    }
-                })
+                if (animated) {
+                    this.tweens.add({
+                        targets: [agent],
+                        x: this.tileSize * drawX,
+                        y: this.tileSize * drawY,
+                        duration: this.ANIMATION_DURATION,
+                        ease: 'Linear',
+                        onComplete: (tween, target, player) => {
+                            target[0].setPosition(this.tileSize * drawX, this.tileSize * drawY);
+                        }
+                    })
+                } else {
+                    agent.setPosition(this.tileSize * drawX, this.tileSize * drawY);
+                }
             }
 
         }
@@ -219,19 +228,8 @@ export class GridworldScene extends Phaser.Scene {
         if (typeof(this.gameParent._stateToDraw) !== 'undefined') {
             let state = this.gameParent._stateToDraw;
             delete this.gameParent._stateToDraw;
-            // redraw = true;
-            this._drawState(state, this.sceneSprite);
+            this._drawState(state, this.sceneSprite, this.gameParent._animated);
         }
-        if (typeof(this.gameParent._scoreToDraw) !== 'undefined') {
-            let score = this.gameParent._scoreToDraw;
-            delete this.gameParent._scoreToDraw;
-            this._drawScore(score, this.sceneSprite);
-        }
-        if (typeof(this.gameParent._timeToDraw) !== 'undefined') {
-            let timeLeft = this.gameParent._timeToDraw;
-            delete this.gameParent._timeToDraw;
-            this._drawTimeLeft(timeLeft, this.sceneSprite);
-        }
-
     }
 }
+
