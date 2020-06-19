@@ -1,13 +1,29 @@
+import json
 from queue import Queue
 
 import numpy as np
 import scipy.stats
 
 import irl.mdp.gridworld as gridworld
+import viz.gridworld
 
 from irl import maxent, value_iteration
 from irl.policy import DeterministicPolicy
 from observer.observer import HugsWall
+
+import matplotlib.pyplot as plt
+
+
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        else:
+            return super(NpEncoder, self).default(obj)
 
 
 def normalize(x):
@@ -48,11 +64,12 @@ def sample_trajectories_near_optimal(gw):
         for i in range(traj_length):
             # change one action in policy
             state_i, action_i = int(traj[i][0]), int(traj[i][1])
-            new_weights = weights.copy()
+
             for new_a in range(gw.n_actions):
                 if new_a == action_i:
                     continue
                 # Change one action selection
+                new_weights = weights.copy()
                 new_weights[state_i] = new_a
                 new_policy = DeterministicPolicy(new_weights)
                 new_traj = gw.generate_trajectories(1, traj_length, new_policy)[0]
@@ -129,13 +146,16 @@ def main(grid_size, discount):
         opt_action_weights = value_iteration.find_policy(gw.n_states, gw.n_actions, gw.transition_probability, r,
                                                          gw.discount, stochastic=False)
         det_policy = DeterministicPolicy(opt_action_weights)
+        #show_reward_function(r.reshape((grid_size, grid_size)), r.reshape((grid_size, grid_size)))
         # Informational: Opt-trajectory given the extracted reward function
+
         opt_traj = gw.generate_trajectories(1, 10, det_policy)[0]
         opt_trajs.append(opt_traj)
         # Now lets see what our attribution model says
         likelihood = observer.p_behavior_given_theta(r, feature_map="ident")
         weights.append(r)
         likelihoods.append(likelihood)
+        #viz.gridworld.show_trajectories(gw, traj, opt_traj)
 
     # Sum of rewards (not discounted)
     returns = [traj.sum(axis=0)[2] for traj in trajs]
@@ -146,12 +166,18 @@ def main(grid_size, discount):
     # Penalize high entropy
     combined_scores = returns + -entropy_scores
     sorted_low_to_high = np.argsort(combined_scores)
-    for i in range(5):
-        index = sorted_low_to_high[-1 - i]
-        traj, ret, entropy = trajs[index], returns[index], entropy_scores[index]
-        print("ret={},entropy={}:".format(ret, entropy))
-        gw.print_trajectory(traj)
-        gw.print_trajectory(opt_trajs[i])
+
+    output = []
+    for i in reversed(sorted_low_to_high):
+        traj, ret, entropy = trajs[i], returns[i], entropy_scores[i]
+        #print("ret={},entropy={}:".format(ret, entropy))
+        #gw.print_trajectory(traj)
+        #gw.print_trajectory(opt_trajs[index ])
+        #print("")
+        action_list = list(trajs[i][:,1].astype(int))
+        output.append({"trajectory":action_list, "return": ret, "entropy": entropy})
+
+    print(json.dumps(output, cls=NpEncoder))
 
 
 if __name__ == '__main__':
