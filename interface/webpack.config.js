@@ -2,7 +2,10 @@ const path = require('path');
 // https://2ality.com/2020/04/webpack-typescript.html
 module.exports = {
     mode: "development",
-    entry: './src/index.ts',
+    entry: {
+        "interactive": "./src/interactive-index.ts",
+        "sorting": './src/sorting-index.ts'
+    },
     devtool: 'inline-source-map',
     resolve: {
         extensions: [ '.tsx', '.ts', '.js' ],
@@ -17,7 +20,7 @@ module.exports = {
         ],
     },
     output: {
-        filename: 'bundle.js',
+        filename: '[name].bundle.js',
         path: path.resolve(__dirname, 'dist'),
     },
     optimization: {

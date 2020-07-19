@@ -1,16 +1,16 @@
 import "./gridworld-mdp"
 import "./gridworld-game"
-import "./gridworld-elements"
+import "./gridworld-trajectory-player"
+import "./paged-navigation"
 import {Direction, TerrainMap, textToTerrain} from "./gridworld-mdp";
 import {GridworldGame} from "./gridworld-game";
 import * as io from "socket.io-client"
-
 
 let game = document.getElementById("player")
 
 function f() {
     const socket = io("http://127.0.0.1:5000");
-    socket.on('connect', function() {
+    socket.on('connect', function () {
         console.log("sent event")
         socket.emit('my event', {data: 'I\'m connected!'});
     });
@@ -25,8 +25,8 @@ function f() {
         *   - Duplicate MDP implementations need to match exactly
         *   - Useful for batch learning, sending back updated agent
      */
-    socket.on('display', function(data: any) {
-        terrain = data
-        game.drawState()
+    socket.on('display', function (data: any) {
+        //terrain = data
+        //game.drawState()
     })
 }

@@ -1,15 +1,9 @@
 import "phaser"
-import {Direction, Gridworld, GridworldState, TerrainMap, TerrainType, textToTerrain} from "./gridworld-mdp"
-
-const sceneConfig: Phaser.Types.Scenes.SettingsConfig = {
-    active: false,
-    visible: false,
-    key: 'Game',
-};
+import {Direction, Gridworld, GridworldState, Position, TerrainMap, TerrainType, textToTerrain} from "./gridworld-mdp"
 
 export class GridworldGame {
-    gameWidth: number
-    gameHeight: number
+    private gameWidth: number
+    private gameHeight: number
     container: HTMLElement
     mdp: Gridworld
     scene: any
@@ -17,16 +11,19 @@ export class GridworldGame {
     assetsPath: string
     game: Phaser.Game
     _stateToDraw: GridworldState
-    _scoreToDraw: number
-    _timeToDraw: number
-    _animated: boolean;
-    constructor (
+    _animated: boolean
+    interactive: boolean
+    displayTrajectory: number[]
+    sceneCreatedDelegate?: () => void
+
+    constructor(
         start_grid: TerrainMap,
         container: HTMLElement,
         tileSize = 128,
-        gameWidth = tileSize*start_grid[0].length,
-        gameHeight = tileSize*start_grid.length,
+        gameWidth = tileSize * start_grid[0].length,
+        gameHeight = tileSize * start_grid.length,
         assetsLoc = "./assets/",
+        interactive: boolean = true
     ) {
         this.gameWidth = gameWidth;
         this.gameHeight = gameHeight;
@@ -36,21 +33,44 @@ export class GridworldGame {
         this.state = this.mdp.getStartState();
 
         this.assetsPath = assetsLoc;
-        this.scene = new GridworldScene(this, tileSize)
+        this.scene = new GridworldScene(this, this.mdp.terrain, tileSize)
+        this.interactive = interactive
     }
 
-    init () {
+    init() {
         let gameConfig: Phaser.Types.Core.GameConfig = {
             type: Phaser.CANVAS,
+            backgroundColor: "#93a1a1",
             width: this.gameWidth,
             height: this.gameHeight,
             scene: this.scene,
             parent: this.container,
             audio: {
                 noAudio: true
+            },
+            input: {
+                mouse: {
+                    capture: this.interactive,
+                    target: null
+                }
+            },
+            callbacks: {
+                postBoot: (game) => {
+                    //game.scene.sleep('Game')
+                    //game.loop.stop()
+                    if (this.scene) {
+                        this.scene.events.on("create", () => {
+                            this.sceneCreated()
+                        })
+                    }
+                }
+            },
+            scale: {
+                mode: Phaser.Scale.FIT,
             }
         };
         this.game = new Phaser.Game(gameConfig);
+
     }
 
     drawState(state: GridworldState, animated: boolean = true) {
@@ -64,63 +84,93 @@ export class GridworldGame {
         this.state = nextState
     }
 
-    drawScore(score: number) {
-        this._scoreToDraw = score;
-    }
-
-    drawTimeLeft(time_left: number) {
-        this._timeToDraw = time_left;
-    }
-
-    close (msg: string) {
+    close() {
         this.game.renderer.destroy();
         this.game.loop.stop();
-        // this.game.canvas.remove();
-        this.game.destroy(false);
+        this.game.destroy(true);
+        this.game.canvas.remove();
     }
 
+    sceneCreated() {
+        if (this.displayTrajectory) {
+            // TODO(nickswalker): Use states or SA pairs to specify trajectories
+            const positions = []
+            let state = this.mdp.getStartState()
+            for (let i = 0; i < this.displayTrajectory.length; i++) {
+                let nextState = this.mdp.transition(state, this.displayTrajectory[i])
+                positions.push(nextState.agentPositions[0])
+                state = nextState
+            }
+            this.scene._drawTrajectory(positions)
+            // Stop calls to update.
+            this.scene.scene.pause()
+        }
+        // Wait for first draw
+        this.scene.events.once("render", () => {
+            if (this.sceneCreatedDelegate) {
+                this.sceneCreatedDelegate()
+            }
+        })
+
+    }
 }
 
-type SpriteMap = {[key: string]: any}
+type SpriteMap = { [key: string]: any }
 
 export class GridworldScene extends Phaser.Scene {
     gameParent: GridworldGame
     tileSize: number
     sceneSprite: object
-    mdp: Gridworld
-    interactive: boolean
+    _interactive: boolean
     inputDelayTimeout: Phaser.Time.TimerEvent
-    ANIMATION_DURATION = 500
-    TIMESTEP_DURATION = 600
-    constructor(gameParent: GridworldGame, tileSize: number, interactive: boolean = true) {
-        super(sceneConfig);
+    terrainMap: TerrainMap
+    ANIMATION_DURATION = 300
+    TIMESTEP_DURATION = 400
+
+    constructor(gameParent: GridworldGame, terrainMap: TerrainMap, tileSize: number, interactive: boolean = true) {
+        super({
+            active: true,
+            visible: true,
+            key: 'Game',
+        });
+        this.terrainMap = terrainMap
         this.gameParent = gameParent
         this.tileSize = tileSize
-        this.mdp = this.gameParent.mdp
-        this.interactive = interactive
         this.inputDelayTimeout = null
+        this._interactive = interactive
+    }
+
+    set interactive(value: boolean) {
+
+        this._interactive = value
     }
 
     preload() {
         this.load.atlas("tiles",
-            this.gameParent.assetsPath+"tiles.png",
-            this.gameParent.assetsPath+"tiles.json");
-        this.load.image("agent", this.gameParent.assetsPath+"agent.png")
+            this.gameParent.assetsPath + "tiles_small.png",
+            this.gameParent.assetsPath + "tiles_small.json");
+        this.load.atlas("arrows",
+            this.gameParent.assetsPath + "arrows.png",
+            this.gameParent.assetsPath + "arrows.json");
+        this.load.image("agent", this.gameParent.assetsPath + "agent.png")
+        this.interactive = this._interactive
     }
+
     create(data: object) {
         this.sceneSprite = {};
         this.drawLevel();
         this._drawState(this.gameParent.state, this.sceneSprite);
     }
+
     drawLevel() {
         //draw tiles
-        const terrain_to_img: {[key in TerrainType]: string} = {
-            [TerrainType.Empty]: 'white.png',
+        const terrain_to_img: { [key in TerrainType]: string } = {
+            [TerrainType.Empty]: 'sol_base2.png',
             [TerrainType.Goal]: 'green.png',
             [TerrainType.Fire]: 'red.png',
-            [TerrainType.Wall]: "black.png"
+            [TerrainType.Wall]: "sol_base02.png"
         };
-        let pos_dict = this.mdp.terrain
+        let pos_dict = this.terrainMap
         for (let y = 0; y < pos_dict.length; y++) {
             for (let x = 0; x < pos_dict[0].length; x++) {
                 const type = pos_dict[y][x]
@@ -135,20 +185,49 @@ export class GridworldScene extends Phaser.Scene {
             }
         }
     }
+
+    _drawTrajectory(trajectory: Position[]) {
+        const halfTile = this.tileSize * .5
+        const path = new Phaser.Curves.Path(this.tileSize * 1 + halfTile, this.tileSize * (this.terrainMap.length - 1 - 1) + halfTile)
+        const graphics = this.scene.scene.add.graphics()
+        graphics.lineStyle(this.tileSize / 4, 0x0000FF, 1.0)
+        for (let i = 0; i < trajectory.length; i++) {
+            const pos = trajectory[i]
+            let [drawX, drawY] = [pos.x, this.terrainMap.length - pos.y - 1]
+            path.lineTo(this.tileSize * drawX + halfTile, this.tileSize * drawY + halfTile)
+        }
+        const lastPos = trajectory[trajectory.length - 1]
+        let [drawX, drawY] = [lastPos.x, this.terrainMap.length - lastPos.y - 1]
+        const arrowHead = this.add.sprite(this.tileSize * drawX + halfTile, this.tileSize * drawY + halfTile, "arrows", "filled_head.png")
+        arrowHead.setDisplaySize(this.tileSize, this.tileSize)
+        arrowHead.setOrigin(.5)
+        const secondLastPos = trajectory[trajectory.length - 2]
+        const delta = [secondLastPos.x - lastPos.x, -1 * (secondLastPos.y - lastPos.y)]
+        if (delta[0] == 1) {
+            arrowHead.rotation = 1.57
+        } else if (delta[1] == -1) {
+            arrowHead.rotation = 3.14
+        } else if (delta[0] == -1) {
+            arrowHead.rotation = 4.71
+        }
+        path.draw(graphics)
+    }
+
     _drawState(state: GridworldState, sprites: SpriteMap, animated: boolean = true) {
         // States are supposed to be fed at regular, spaced intervals, so no tweens are running usually.
         // We'll kill everything for situations where we are responding to a hard state override
         this.tweens.killAll()
-        sprites = typeof(sprites) === 'undefined' ? {} : sprites;
-        sprites["agents"] = typeof(sprites["agents"]) === 'undefined' ? {} : sprites["agents"];
-        for (let p = 0; p < state.agentPositions.length; p++){
+        sprites = sprites ?? {}
+        sprites["agents"] = sprites["agents"] ?? {}
+        for (let p = 0; p < state.agentPositions.length; p++) {
             const agentPosition = state.agentPositions[p]
             // Flip Y to make lower-left the origin
-            let [drawX, drawY] = [agentPosition.x, this.mdp.height - agentPosition.y - 1]
-            if (typeof(sprites['agents'][p]) === 'undefined') {
+            let [drawX, drawY] = [agentPosition.x, this.terrainMap.length - agentPosition.y - 1]
+            if (typeof (sprites['agents'][p]) === 'undefined') {
                 const agent = this.add.sprite(this.tileSize * drawX, this.tileSize * drawY, "agent");
                 agent.setDisplaySize(this.tileSize, this.tileSize)
                 agent.setOrigin(0)
+
                 sprites['agents'][p] = agent;
             } else {
                 const agent = sprites['agents'][p]
@@ -171,39 +250,9 @@ export class GridworldScene extends Phaser.Scene {
         }
     }
 
-    _drawScore(score: number, sprites: SpriteMap) {
-        const scoreString = "Score: "+ score.toString();
-        if (typeof(sprites['score']) !== 'undefined') {
-            sprites['score'].setText(score);
-        }
-        else {
-            sprites['score'] = this.add.text(
-                5, 25, scoreString,
-                {
-                    font: "20px Arial",
-                    fill: "yellow",
-                    align: "left"
-                }
-            )
-        }
-    }
-    _drawTimeLeft(timeLeft: number, sprites: SpriteMap) {
-        const time_left = "Time Left: "+ timeLeft.toString();
-        if (typeof(sprites['time_left']) !== 'undefined') {
-            sprites['time_left'].setText(time_left);
-        }
-        else {
-            sprites['time_left'] = this.add.text(
-                5, 5, time_left,
-                {
-                    font: "20px Arial",
-                    fill: "yellow",
-                    align: "left"
-                }
-            )
-        }
-    }
     update(time: number, delta: number) {
+        //console.log(this.scene.isPaused())
+        // Blackout user controls for a bit while we animate the current step
         if (this.inputDelayTimeout && this.inputDelayTimeout.getOverallProgress() == 1.0) {
             this.inputDelayTimeout = null
         }
@@ -225,7 +274,7 @@ export class GridworldScene extends Phaser.Scene {
                 this.inputDelayTimeout = this.time.addEvent({delay: 500})
             }
         }
-        if (typeof(this.gameParent._stateToDraw) !== 'undefined') {
+        if (this.gameParent._stateToDraw) {
             let state = this.gameParent._stateToDraw;
             delete this.gameParent._stateToDraw;
             this._drawState(state, this.sceneSprite, this.gameParent._animated);

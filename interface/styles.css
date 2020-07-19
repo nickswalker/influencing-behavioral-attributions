@@ -1,0 +1,101 @@
+html,body {
+    height: 100%;
+    padding: 0;
+    margin: 0;
+}
+crowd-form, form {
+    display: block;
+    height: 100%;
+}
+
+#task {
+    height: 100%;
+    width: 100%;
+    position: absolute;
+}
+
+.sorting {
+}
+
+#columns {
+    display: flex;
+    height: auto;
+    flex-direction: column;
+}
+
+#unsorted {
+    list-style: none;
+    bottom: 0;
+    display: flex;
+    padding: 0;
+    margin: 0;
+    width: 100%;
+    overflow-x: scroll;
+    background-color: lightgray;
+    padding: 6px;
+    position: sticky;
+    top: 0;
+    box-shadow: 0 0 18px;
+}
+
+.stand-in {
+    width: 100px;
+    height: 100px;
+    background-color: grey;
+}
+
+#unsorted > li {
+    padding-right: 8px;
+}
+/* https://stackoverflow.com/questions/18669216/how-do-i-use-flex-flow-column-wrap */
+.column, #column-controls {
+    display: flex;
+    border: 1px solid grey;
+    border-width: 0 0 1px 0 ;
+    list-style: none;
+    padding: 12px 12px 6px 12px;
+    margin: 0;
+    flex-wrap: wrap;
+    min-height: 100px;
+}
+
+#column-controls {
+    display: flex;
+    justify-content: center;
+    order: 1; /* send to right */
+    background-color: lightgray;
+}
+
+.column > li {
+    margin: 0 6px 6px 0 ;
+}
+
+#controls > * {
+    display: inline-block;
+}
+
+.group {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+.group li {
+    display: inline-block;
+    margin-right: 6px;
+}
+
+.group-block {
+    margin-bottom: 24px;
+    padding-bottom: 24px;
+}
+
+#task crowd-input {
+    margin-top: -16px;
+    margin-bottom: 16px;
+}
+
+gridworld-player {
+    width: 120px;
+    height: 120px;
+    overflow: hidden;
+}

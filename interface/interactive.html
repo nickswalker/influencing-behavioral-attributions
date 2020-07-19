@@ -6,16 +6,17 @@
 
 </head>
 <body>
-<gridworld-player id="player" data-terrain=
+<gridworld-player id="player" terrain=
   "'XXXXXXX',
     'X    GX',
     'X-----X',
     'X-----X',
     'X-----X',
     'X0----X',
-    'XXXXXXX'" data-trajectory="0,1,0,1,0,1,0,1"></gridworld-player>
+    'XXXXXXX'" trajectory="0,1,0,1,0,1,0,1"></gridworld-player>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.23.0/phaser.min.js" integrity="sha256-4uqhg4Bt90ccgI5D9tA2uhf1lTluFoLkoFSw466fH4s=" crossorigin="anonymous"></script>
-<script type="module" src="dist/bundle.js"></script>
-<script type="module" src="dist/vendors~main.bundle.js"></script>
+<script type="module" src="dist/vendors~interactive.bundle.js"></script>
+<script type="module" src="dist/interactive~sorting.bundle.js"></script>
+<script type="module" src="dist/interactive.bundle.js"></script>
 </body>
 </html>
