@@ -5,7 +5,8 @@ const terrain_to_img: { [key in TerrainType]: string[] } = {
     [TerrainType.Empty]: ['colors','sol_base2.png'],
     [TerrainType.Goal]: ['landmarks','door.png'],
     [TerrainType.Fire]: ['landmarks','fire.png'],
-    [TerrainType.Wall]: ['colors', "sol_base02_full.png"]
+    [TerrainType.Wall]: ['colors', "sol_base02_full.png"],
+    [TerrainType.Reward]: ['landmarks', "treasure.png"],
 };
 
 export class GridworldGame {
@@ -29,7 +30,7 @@ export class GridworldGame {
         tileSize = 128,
         gameWidth = tileSize * start_grid[0].length,
         gameHeight = tileSize * start_grid.length,
-        assetsLoc = "./assets/",
+        assetsLoc = "https://mturk.nickwalker.us/attribution/sorting/assets/",
         interactive: boolean = true
     ) {
         this.gameWidth = gameWidth;

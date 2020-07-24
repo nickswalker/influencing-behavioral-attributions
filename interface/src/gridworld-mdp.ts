@@ -31,7 +31,8 @@ export enum TerrainType {
     Empty,
     Wall,
     Fire,
-    Goal
+    Goal,
+    Reward
 }
 
 export const characterToTerrainType: { [key: string]: TerrainType } = {
@@ -39,7 +40,9 @@ export const characterToTerrainType: { [key: string]: TerrainType } = {
     " ": TerrainType.Empty,
     "X": TerrainType.Wall,
     "F": TerrainType.Fire,
-    "G": TerrainType.Goal
+    "G": TerrainType.Goal,
+    "T": TerrainType.Reward,
+    "R": TerrainType.Reward,
 }
 
 export function textToTerrain(grid: string[]) {
