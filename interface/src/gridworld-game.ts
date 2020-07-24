@@ -1,5 +1,12 @@
 import "phaser"
-import {Direction, Gridworld, GridworldState, Position, TerrainMap, TerrainType, textToTerrain} from "./gridworld-mdp"
+import {Direction, Gridworld, GridworldState, Position, TerrainMap, TerrainType} from "./gridworld-mdp"
+
+const terrain_to_img: { [key in TerrainType]: string[] } = {
+    [TerrainType.Empty]: ['colors','sol_base2.png'],
+    [TerrainType.Goal]: ['landmarks','door.png'],
+    [TerrainType.Fire]: ['landmarks','fire.png'],
+    [TerrainType.Wall]: ['colors', "sol_base02_full.png"]
+};
 
 export class GridworldGame {
     private gameWidth: number
@@ -102,6 +109,7 @@ export class GridworldGame {
                 state = nextState
             }
             this.scene._drawTrajectory(positions)
+            this.scene._drawState(this.mdp.getStartState(), this.scene.sceneSprite, false)
             // Stop calls to update.
             this.scene.scene.pause()
         }
@@ -146,13 +154,14 @@ export class GridworldScene extends Phaser.Scene {
     }
 
     preload() {
-        this.load.atlas("tiles",
+        this.load.atlas("colors",
             this.gameParent.assetsPath + "tiles_small.png",
             this.gameParent.assetsPath + "tiles_small.json");
         this.load.atlas("arrows",
             this.gameParent.assetsPath + "arrows.png",
             this.gameParent.assetsPath + "arrows.json");
-        this.load.image("agent", this.gameParent.assetsPath + "agent.png")
+        this.load.image("agent", this.gameParent.assetsPath + "robot.png")
+        this.load.atlas("landmarks", this.gameParent.assetsPath + "landmarks.png", this.gameParent.assetsPath + "landmarks.json")
         this.interactive = this._interactive
     }
 
@@ -164,24 +173,35 @@ export class GridworldScene extends Phaser.Scene {
 
     drawLevel() {
         //draw tiles
-        const terrain_to_img: { [key in TerrainType]: string } = {
-            [TerrainType.Empty]: 'sol_base2.png',
-            [TerrainType.Goal]: 'green.png',
-            [TerrainType.Fire]: 'red.png',
-            [TerrainType.Wall]: "sol_base02.png"
-        };
         let pos_dict = this.terrainMap
         for (let y = 0; y < pos_dict.length; y++) {
             for (let x = 0; x < pos_dict[0].length; x++) {
                 const type = pos_dict[y][x]
+                const [key, name] = terrain_to_img[type]
+                // Landmarks need to sit on top of the default tile
+                if (key === "landmarks") {
+                    const [key, name] = terrain_to_img[TerrainType.Empty]
+                    const tile = this.add.sprite(
+                        this.tileSize * x,
+                        this.tileSize * y,
+                        key,
+                        name
+                    );
+                    tile.setDisplaySize(this.tileSize, this.tileSize);
+                    tile.setOrigin(0);
+                    tile.setDepth(0)
+                }
                 const tile = this.add.sprite(
                     this.tileSize * x,
                     this.tileSize * y,
-                    "tiles",
-                    terrain_to_img[type]
+                    key,
+                    name
                 );
                 tile.setDisplaySize(this.tileSize, this.tileSize);
                 tile.setOrigin(0);
+                if (key === "landmarks") {
+                    tile.setDepth(2)
+                }
             }
         }
     }
@@ -190,6 +210,7 @@ export class GridworldScene extends Phaser.Scene {
         const halfTile = this.tileSize * .5
         const path = new Phaser.Curves.Path(this.tileSize * 1 + halfTile, this.tileSize * (this.terrainMap.length - 1 - 1) + halfTile)
         const graphics = this.scene.scene.add.graphics()
+        graphics.setDepth(1);
         graphics.lineStyle(this.tileSize / 4, 0x0000FF, 1.0)
         for (let i = 0; i < trajectory.length; i++) {
             const pos = trajectory[i]
@@ -210,7 +231,9 @@ export class GridworldScene extends Phaser.Scene {
         } else if (delta[0] == -1) {
             arrowHead.rotation = 4.71
         }
+        arrowHead.setDepth(-1)
         path.draw(graphics)
+        //graphics.generateTexture("trajectory")
     }
 
     _drawState(state: GridworldState, sprites: SpriteMap, animated: boolean = true) {
@@ -227,7 +250,7 @@ export class GridworldScene extends Phaser.Scene {
                 const agent = this.add.sprite(this.tileSize * drawX, this.tileSize * drawY, "agent");
                 agent.setDisplaySize(this.tileSize, this.tileSize)
                 agent.setOrigin(0)
-
+                agent.setDepth(2)
                 sprites['agents'][p] = agent;
             } else {
                 const agent = sprites['agents'][p]

@@ -36,6 +36,7 @@ crowd-form, form {
     position: sticky;
     top: 0;
     box-shadow: 0 0 18px;
+    box-sizing: border-box;
 }
 
 .stand-in {
@@ -74,6 +75,12 @@ crowd-form, form {
     display: inline-block;
 }
 
+.group-block {
+    margin-bottom: 24px;
+    padding-bottom: 24px;
+    max-width: 1000px;
+}
+
 .group {
     list-style: none;
     padding: 0;
@@ -82,12 +89,9 @@ crowd-form, form {
 .group li {
     display: inline-block;
     margin-right: 6px;
+    margin-bottom: 6px;
 }
 
-.group-block {
-    margin-bottom: 24px;
-    padding-bottom: 24px;
-}
 
 #task crowd-input {
     margin-top: -16px;
@@ -98,4 +102,8 @@ gridworld-player {
     width: 120px;
     height: 120px;
     overflow: hidden;
+}
+
+p, crowd-input{
+    max-width: 700px;
 }

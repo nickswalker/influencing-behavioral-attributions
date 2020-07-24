@@ -10,7 +10,7 @@
 <div id="task">
     <div class="page instructions">
         <h1>Welcome</h1>
-        <p>In this HIT you'll look at images  showing a path that a dot could take to the green exit square:</p>
+        <p>In this HIT you'll look at images showing a path that a robot could take to the door:</p>
 
         <gridworld-display id="player" terrain=
                 "'XXXXXXX',
@@ -19,13 +19,13 @@
     'X--F--X',
     'X-----X',
     'X0----X',
-    'XXXXXXX'" trajectory="0,1,0,1,0,1,0,1" stepwise="false"></gridworld-display>
+    'XXXXXXX'" trajectory="0,1,0,1,0,1,0,1"></gridworld-display>
 
-        <p>We want to understand how people perceive and categorize these paths, so we'll ask you to organize them into groups. These groups should be based on which paths you think belong together. The interface for grouping will have a  list of paths which you'll be able to drag into rows.</p>
-        <p>After you're done making groups, we'll ask you to briefly explain why the items in each group belong together.</p>
-        <p>The whole task should take 15 minutes.</p>
+        <p>We want to understand how people perceive and categorize these paths, so we'll ask you to organize them into groups. These groups should be based on which paths you think belong together. The interface for grouping will have a list of paths which you'll be able to drag into rows.</p>
+        <p>After you're done making groups, we'll ask you to briefly explain why the items in each group belong together. We'll also ask your age and gender. Note that before we accept your work, we'll check that your explanations are plausible.</p>
+        <p>The whole task should take 15 minutes. Please <b>complete this HIT only once</b>. Extra submissions will be rejected.</p>
 
-        <p>The next page describes this research and the data collected in more detail.</p>
+        <p>The next pages describe this research and the data collected in more detail.</p>
     </div>
     <div class="page qualification">
         <h2>Qualification</h2>
@@ -38,7 +38,7 @@
     <div class="page irb">
         <h3>UNIVERSITY OF WASHINGTON<br />
             CONSENT FORM<br />
-            ONLINE SURVEY PERCEPTIONS OF A ROBOT</h3>
+            ONLINE SURVEY - PERCEPTIONS OF A ROBOT</h3>
 
         <h3>Researchers' statement</h3>
         <p>We are asking you to be in a research study. The purpose of this consent form is to give you the information you will need to help you decide whether to be in the study or not. Please read the form carefully. You may ask questions about the purpose of the research, what we would ask you to do, the possible risks and benefits, your rights as a volunteer, and anything else about the research or this form that is not clear. When we have answered all your questions, you can decide if you want to be in the study or not. This process is called "informed consent."</p>
@@ -70,6 +70,7 @@
             <li>The <b>top row shows all of the items you need to sort</b>. The other rows represent groups.</li>
             <li><b>Drag</b> each item into the group with the others you think it belongs with.</li>
             <li>You can add as many groups as you need. If you add more groups than you need, simply <b>leave the groups you don't need empty</b>.</li>
+            <li>You can add as many items to a group as you need. The row will expand to hold them.</li>
         </ul>
         <p></p>
         <p></p>
@@ -81,24 +82,24 @@
 
 <div id="columns">
     <div id="column-controls">
-        <button id="add-column">Add Row</button>
+        <button id="add-column">Add Group</button>
     </div>
 </div>
 </div>
     <div class="page explanations">
-        <p>Below are the groups you made. For each one, please briefly explain why the items belong in a group together</p>
-        <div class="group-block">
-            <ul class="group"><li><div class="stand-in"></div></li><li><div class="stand-in"></div></li></ul>
-            <crowd-input name="explanation1" placeholder="Why do these items belong together?"></crowd-input>
-        </div>
-        <div class="group-block">
-            <ul class="group"><li><div class="stand-in"></div></li><li><div class="stand-in"></div></li></ul>
-            <crowd-input name="explanation1" placeholder="Why do these items belong together?"></crowd-input>
-        </div>
+        <p>Below are the groups you made. For each one, please briefly explain what makes the items belong in a group together.</p>
+        <div id="groups"></div>
+
     </div>
     <div class="page how">
         <p>In a couple sentences, what aspects of the items did you base your grouping decisions on?</p>
-        <crowd-input name="how" placeholder="Why do these items belong together?"></crowd-input>
+        <crowd-input required name="how"></crowd-input>
+
+    </div>
+    <div class="page demographics">
+        <h2>Demographics</h2>
+        <crowd-input autovalidate required name="age" placeholder="Age" type="number"></crowd-input>
+        <crowd-input autovalidate required name="gender" placeholder="Gender"></crowd-input>
 
     </div>
     <div class="page thanks">

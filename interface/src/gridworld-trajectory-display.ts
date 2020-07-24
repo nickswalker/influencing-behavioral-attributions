@@ -51,6 +51,8 @@ export class GridworldTrajectoryDisplay extends GridworldTrajectoryPlayer {
             const imageElement = document.createElement("img")
             imageElement.src = image.src
             this.gameContainer.appendChild(imageElement);
+            // Clear out any manual styling from Phaser
+            this.gameContainer.setAttribute("style", "")
         }
         this.game.init();
 

@@ -4,7 +4,6 @@ var movedto: number[] = [];
 let numPages = 0;
 let pagesContainer: HTMLElement = null;
 let pageNumber: HTMLElement = null;
-
 let preNextValidator: (arg0: HTMLElement) => string = null
 
 export function setUpPages(container: HTMLElement, nextValidator: (arg0: HTMLElement) => string) {
