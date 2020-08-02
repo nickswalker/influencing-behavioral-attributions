@@ -54,10 +54,13 @@ def sample_trajectories_near_optimal(gw):
                                                      gw.discount, stochastic=False)
     opt_policy = DeterministicPolicy(opt_action_weights)
     opt_traj = gw.generate_trajectories(1, traj_length, opt_policy)[0]
+    opt_traj_state_seq = opt_traj[:,0]
     to_mutate = Queue()
     to_mutate.put((opt_action_weights, opt_traj))
     result = []
+    result += [opt_traj]
     seen = set()
+    seen.add(hash(opt_traj_state_seq.data.tobytes()))
     while not to_mutate.empty():
         weights, traj = to_mutate.get()
         modified_trajs = []
@@ -73,13 +76,14 @@ def sample_trajectories_near_optimal(gw):
                 new_weights[state_i] = new_a
                 new_policy = DeterministicPolicy(new_weights)
                 new_traj = gw.generate_trajectories(1, traj_length, new_policy)[0]
+                new_state_seq = new_traj[:,0]
                 # Check that both end in the same place. If not, skip this mutation
-                if new_traj[-1][0] != opt_traj[-1][0]:
+                if new_state_seq[-1] != opt_traj_state_seq[-1]:
                     continue
                 # No duplicates
-                if hash(new_traj.data.tobytes()) in seen:
+                if hash(new_state_seq.data.tobytes()) in seen:
                     continue
-                seen.add(hash(new_traj.data.tobytes()))
+                seen.add(hash(new_state_seq.data.tobytes()))
                 modified_trajs.append(new_traj)
                 to_mutate.put((new_weights, new_traj))
 
