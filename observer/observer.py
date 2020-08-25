@@ -1,6 +1,11 @@
 import numpy as np
 from scipy import stats
 
+import math
+
+def sigmoid(x):
+  return 1 / (1 + math.exp(-x))
+
 class ObserverModel:
     def __init__(self):
         pass
@@ -46,10 +51,5 @@ class HugsWall:
                     inside_vals.append(val)
 
         wall_mean, inside_mean = np.mean(wall_vals), np.mean(inside_vals)
-        # How confident would a t-test be about the reward being different for hugging the wall?
-        # Lower p value corresponds to more certainty about difference
-        res = stats.ttest_ind(wall_vals, inside_vals)
-        if wall_mean > inside_mean:
-            return [1.0 - res.pvalue, res.pvalue]
-        else:
-            return [res.pvalue, 1.0 - res.pvalue]
+        confidence_in_wall = sigmoid(wall_mean - inside_mean)
+        return [confidence_in_wall, 1 - confidence_in_wall]

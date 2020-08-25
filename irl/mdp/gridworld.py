@@ -23,7 +23,8 @@ class Gridworld(object):
 
         self.actions = ((1, 0), (0, 1), (-1, 0), (0, -1))
         self.n_actions = len(self.actions)
-        self.n_states = grid_size**2
+        # Grid plus absorbing
+        self.n_states = grid_size**2 + 1
         self.grid_size = grid_size
         self.wind = wind
         self.discount = discount
@@ -31,7 +32,7 @@ class Gridworld(object):
         # FIXME(nickswalker): Only works with ident state features
         self.reward_weights = np.zeros(self.n_states)
         # Default task is to get to the other corner
-        self.reward_weights[-1] = 1
+        self.reward_weights[-2] = 1
 
         # Preconstruct the transition probability array.
         self.transition_probability = np.array(
@@ -113,6 +114,9 @@ class Gridworld(object):
         i: State int.
         -> (x, y) int tuple.
         """
+        # Absorbing state
+        if i == self.grid_size ** 2:
+                return (-1, -1)
         return (i % self.grid_size, i // self.grid_size)
 
     def point_to_int(self, p):
@@ -122,7 +126,9 @@ class Gridworld(object):
         p: (x, y) tuple.
         -> State int.
         """
-
+        # Absorbing state
+        if p[0] == -1 and p[1] == -1:
+                return self.grid_size ** 2
         return p[0] + p[1]*self.grid_size
 
     def neighbouring(self, i, k):
@@ -151,6 +157,14 @@ class Gridworld(object):
         xi, yi = self.int_to_point(i)
         xj, yj = self.actions[j]
         xk, yk = self.int_to_point(k)
+
+        # Absorb after goal reached
+        if self.is_goal(xi, yi):
+            # Next state must be absorbing, no matter what action
+            if xk == -1 and yk == -1:
+                return 1.0
+            else:
+                return 0.0
 
         if not self.neighbouring((xi, yi), (xk, yk)):
             return 0.0
@@ -251,6 +265,9 @@ class Gridworld(object):
             return 1
         raise ValueError("Unexpected state.")
 
+    def is_goal(self, sx, sy):
+        return  sx == self.grid_size - 1 and sy == self.grid_size - 1
+
     def optimal_policy_deterministic(self, state_int):
         """
         Deterministic version of the optimal policy for this gridworld.
@@ -292,7 +309,14 @@ class Gridworld(object):
                     # Follow the given policy.
                     action = self.actions[policy(self.point_to_int((sx, sy)))]
 
-                if (0 <= sx + action[0] < self.grid_size and
+                # Absorbed
+                if self.is_goal(sx, sy):
+                    next_sx = -1
+                    next_sy = -1
+                elif sx == -1 and sy == -1:
+                    next_sx = sx
+                    next_sy = sy
+                elif (0 <= sx + action[0] < self.grid_size and
                         0 <= sy + action[1] < self.grid_size):
                     next_sx = sx + action[0]
                     next_sy = sy + action[1]
