@@ -1,9 +1,9 @@
-import {GridworldState, textToTerrain} from "./gridworld-mdp";
+import {GridworldState, textToStates, textToTerrain} from "./gridworld-mdp";
 import {GridworldGame} from "./gridworld-game";
 
 export class GridworldTrajectoryPlayer extends HTMLElement {
     protected game: GridworldGame;
-    protected trajectory: number[];
+    protected trajectory: GridworldState[];
     protected currentState: any
     protected currentIndex: number
     protected intervalId: number;
@@ -65,12 +65,9 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
         terrainData = terrainData.filter((value: any, index: number) => {
             return index % 2 == 1;
         });
-        this.trajectory = this.getAttribute("trajectory").split(",").map((value: string) => {
-            return parseInt(value)
-        })
+        this.trajectory = textToStates(this.getAttribute("trajectory"))
 
-        const terrain = textToTerrain(terrainData)
-        this.game = new GridworldGame(terrain["terrain"], this.gameContainer, 8)
+        this.game = new GridworldGame( this.gameContainer, 32)
         this.game.interactive = false
         this.game.init();
     }
@@ -81,8 +78,8 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
         setTimeout(() => {
             this.intervalId = setInterval(() => {
                 this.advance()
-            }, 500);
-        }, 400)
+            }, 450);
+        }, 350)
     }
 
     advance() {
@@ -94,8 +91,7 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
             this.game.scene.scene.pause()
             return;
         }
-        const actioni = this.trajectory[this.currentIndex];
-        const statei = this.game.mdp.transition(this.state, actioni)
+        const statei = this.trajectory[this.currentIndex];
         this.game.drawState(statei);
         this.state = statei;
         this.currentIndex += 1;
@@ -107,7 +103,7 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
             clearInterval(this.intervalId)
         }
         this.currentIndex = 0;
-        this.state = this.game.mdp.getStartState();
+        this.state = this.trajectory[0];
         this.game.drawState(this.state, false);
     }
 

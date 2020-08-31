@@ -1,6 +1,7 @@
 import "./gridworld-mdp"
 import "./gridworld-game"
 import "./gridworld-trajectory-player"
+import "./gridworld-trajectory-display"
 import "./paged-navigation"
 import {Direction, TerrainMap, textToTerrain} from "./gridworld-mdp";
 import {GridworldGame} from "./gridworld-game";

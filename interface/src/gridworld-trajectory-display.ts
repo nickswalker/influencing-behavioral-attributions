@@ -1,4 +1,4 @@
-import {GridworldState, textToTerrain} from "./gridworld-mdp";
+import {GridworldState, textToStates, textToTerrain} from "./gridworld-mdp";
 import {GridworldGame} from "./gridworld-game";
 import {GridworldTrajectoryPlayer} from "./gridworld-trajectory-player";
 
@@ -31,13 +31,12 @@ export class GridworldTrajectoryDisplay extends GridworldTrajectoryPlayer {
         terrainData = terrainData.filter((value: any, index: number) => {
             return index % 2 == 1;
         });
-        this.trajectory = this.getAttribute("trajectory").split(",").map((value: string) => {
-            return parseInt(value)
-        })
+        this.trajectory = textToStates(this.getAttribute("trajectory"))
+
 
         let stepwise = this.getAttribute("stepwise") !== "false";
         const terrain = textToTerrain(terrainData)
-        this.game = new GridworldGame(terrain["terrain"], this.gameContainer, 16)
+        this.game = new GridworldGame(this.gameContainer, 32)
         this.game.scene.stepwise = false
         this.game.interactive = false
 

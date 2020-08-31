@@ -1,6 +1,6 @@
 import RuntimeError = WebAssembly.RuntimeError;
 
-export  type Position = { x: number, y: number }
+export type Position = { x: number, y: number }
 
 export enum Direction {
     EAST,
@@ -43,6 +43,14 @@ export const characterToTerrainType: { [key: string]: TerrainType } = {
     "G": TerrainType.Goal,
     "T": TerrainType.Reward,
     "R": TerrainType.Reward,
+}
+
+export function textToStates(states: string) {
+    const trajString = states.replace(/\(/g,'')
+    let trajStates = trajString.split(")").filter((item) => { return item.length > 1}).map((item) => item.split(","))
+    return trajStates.map((value: string[]) => {
+        return new GridworldState([{x: parseInt(value[0]), y: parseInt(value[1])}])
+    })
 }
 
 export function textToTerrain(grid: string[]) {
@@ -88,7 +96,7 @@ export class Gridworld {
     }
 
     getStartState() {
-        return new GridworldState([{x: 1, y: 1}])
+        return new GridworldState([{x: 10, y: 9}])
     }
 
     transition(state: GridworldState, action: Direction): GridworldState {
