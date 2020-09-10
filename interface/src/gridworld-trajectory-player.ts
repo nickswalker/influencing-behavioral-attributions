@@ -11,10 +11,13 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
     protected shadow: ShadowRoot
     protected gameContainer: HTMLElement
     protected playButton: HTMLElement
+    protected orientation: number[]
+    protected diffs: GridworldState[]
 
     constructor() {
         super();
         this.shadow = this.attachShadow({mode: 'open'});
+
 
     }
 
@@ -66,6 +69,13 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
             return index % 2 == 1;
         });
         this.trajectory = textToStates(this.getAttribute("trajectory"))
+        this.orientation = [0, -1]
+        this.diffs = [new GridworldState([{x: 1, y:0}])]
+        for (let i = 1; i < this.trajectory.length; i++) {
+            const prev = this.trajectory[i - 1].agentPositions[0]
+            const current = this.trajectory[i].agentPositions[0]
+            this.diffs.push(new GridworldState([{x: current.x - prev.x, y: current.y - prev.y}]))
+        }
 
         this.game = new GridworldGame( this.gameContainer, 32)
         this.game.interactive = false
@@ -78,8 +88,8 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
         setTimeout(() => {
             this.intervalId = setInterval(() => {
                 this.advance()
-            }, 450);
-        }, 350)
+            }, 300);
+        }, 200)
     }
 
     advance() {
@@ -89,6 +99,12 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
             clearInterval(this.intervalId)
             this.intervalId = null
             this.game.scene.scene.pause()
+            return;
+        }
+        const diff = this.diffs[this.currentIndex]
+        if (this.orientation[0] != diff.agentPositions[0].x || this.orientation[1] != diff.agentPositions[0].y) {
+            this.game.rotateAgent(diff.agentPositions[0].x, diff.agentPositions[0].y)
+            this.orientation = [diff.agentPositions[0].x, diff.agentPositions[0].y]
             return;
         }
         const statei = this.trajectory[this.currentIndex];

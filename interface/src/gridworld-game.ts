@@ -19,6 +19,7 @@ export class GridworldGame {
     assetsPath: string
     game: Phaser.Game
     _stateToDraw: GridworldState
+    _rotationToDraw: number[]
     _animated: boolean
     interactive: boolean
     displayTrajectory: GridworldState[]
@@ -82,6 +83,10 @@ export class GridworldGame {
         this._animated = animated
     }
 
+    rotateAgent(x: number, y: number) {
+        this._rotationToDraw = [x, y]
+    }
+
     setAction(player_index: number, action: Direction) {
         const nextState = this.mdp.transition(this.state, action);
         this._stateToDraw = nextState;
@@ -126,7 +131,7 @@ export class GridworldScene extends Phaser.Scene {
     _trailGrahpics: Phaser.GameObjects.Graphics
     inputDelayTimeout: Phaser.Time.TimerEvent
     terrainMap: TerrainMap
-    ANIMATION_DURATION = 100
+    ANIMATION_DURATION = 50
 
     constructor(gameParent: GridworldGame, tileSize: number, interactive: boolean = true) {
         super({
@@ -222,6 +227,27 @@ export class GridworldScene extends Phaser.Scene {
         //graphics.generateTexture("trajectory")
     }
 
+    _drawRotation(rotation: number[], sprites: SpriteMap) {
+        let angle = 0
+        if (rotation[0] == -1) {
+            angle = -90
+        } else if (rotation[1] == -1) {
+            angle = 0
+        } else if (rotation[0] == 1) {
+            angle = 90
+        } else if (rotation[1] == 1) {
+            angle = 180
+        }
+        this.tweens.add({
+            targets:sprites["agents"][0],
+            angle: angle,
+            duration: this.ANIMATION_DURATION,
+            onComplete: (tween, target, player) => {
+                target[0].setAngle(angle);
+            }
+        })
+    }
+
     _drawState(state: GridworldState, sprites: SpriteMap, animated: boolean = true) {
         // States are supposed to be fed at regular, spaced intervals, so no tweens are running usually.
         // We'll kill everything for situations where we are responding to a hard state override
@@ -235,9 +261,9 @@ export class GridworldScene extends Phaser.Scene {
             // Flip Y to make lower-left the origin
             let [drawX, drawY] = [agentPosition.x, agentPosition.y]
             if (typeof (sprites['agents'][p]) === 'undefined') {
-                const agent = this.add.sprite(tS * drawX, tS * drawY, "agent");
+                const agent = this.add.sprite(tS * drawX + hS, tS * drawY + hS, "agent");
                 agent.setDisplaySize(tS, tS)
-                agent.setOrigin(0)
+                agent.setOrigin(0.5)
                 agent.setDepth(2)
                 sprites['agents'][p] = agent;
             } else {
@@ -260,15 +286,15 @@ export class GridworldScene extends Phaser.Scene {
                     })*/
                     this.tweens.add({
                         targets:agent,
-                        x: tS * drawX,
-                        y: tS * drawY,
+                        x: tS * drawX + hS,
+                        y: tS * drawY + hS,
                         duration: this.ANIMATION_DURATION,
                         onComplete: (tween, target, player) => {
-                            target[0].setPosition(tS * drawX, tS * drawY);
+                            target[0].setPosition(tS * drawX + hS, tS * drawY + hS);
                         }
                     })
                 } else {
-                    agent.setPosition(tS * drawX, tS * drawY);
+                    agent.setPosition(tS * drawX + hS, tS * drawY + hS);
                 }
             }
 
@@ -279,7 +305,7 @@ export class GridworldScene extends Phaser.Scene {
         const agent = this.sceneSprite["agents"][0]
         if (agent) {
             const hT = .5 * this.tileSize
-            this._trailGrahpics.fillRect(agent.x + hT - .25 * hT, agent.y + hT - .25 * hT, .5 * hT, .5 * hT)
+            this._trailGrahpics.fillRect(agent.x - .25 * hT, agent.y - .25 * hT, .5 * hT, .5 * hT)
         }
         //console.log(this.scene.isPaused())
         // Blackout user controls for a bit while we animate the current step
@@ -308,6 +334,11 @@ export class GridworldScene extends Phaser.Scene {
             let state = this.gameParent._stateToDraw;
             delete this.gameParent._stateToDraw;
             this._drawState(state, this.sceneSprite, this.gameParent._animated);
+        }
+        if (this.gameParent._rotationToDraw) {
+            let rotation = this.gameParent._rotationToDraw;
+            delete this.gameParent._rotationToDraw;
+            this._drawRotation(rotation, this.sceneSprite)
         }
     }
 }
