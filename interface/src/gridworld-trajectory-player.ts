@@ -1,6 +1,72 @@
 import {GridworldState, textToStates, textToTerrain} from "./gridworld-mdp";
 import {GridworldGame} from "./gridworld-game";
 
+declare global {
+    interface HTMLCanvasElement {
+        captureStream(frameRate?: number): MediaStream;
+    }
+}
+
+declare interface MediaRecorderErrorEvent extends Event {
+    name: string;
+}
+
+declare interface MediaRecorderDataAvailableEvent extends Event {
+    data : any;
+}
+
+interface MediaRecorderEventMap {
+    'dataavailable': MediaRecorderDataAvailableEvent;
+    'error': MediaRecorderErrorEvent ;
+    'pause': Event;
+    'resume': Event;
+    'start': Event;
+    'stop': Event;
+    'warning': MediaRecorderErrorEvent ;
+}
+
+
+declare class MediaRecorder extends EventTarget {
+
+    readonly mimeType: string;
+    readonly state: 'inactive' | 'recording' | 'paused';
+    readonly stream: MediaStream;
+    ignoreMutedMedia: boolean;
+    videoBitsPerSecond: number;
+    audioBitsPerSecond: number;
+
+    ondataavailable: (event : MediaRecorderDataAvailableEvent) => void;
+    onerror: (event: MediaRecorderErrorEvent) => void;
+    onpause: () => void;
+    onresume: () => void;
+    onstart: () => void;
+    onstop: () => void;
+
+    constructor(stream: MediaStream, options: any);
+
+    start(): null;
+
+    stop(): null;
+
+    resume(): null;
+
+    pause(): null;
+
+    isTypeSupported(type: string): boolean;
+
+    requestData(): null;
+
+
+    addEventListener<K extends keyof MediaRecorderEventMap>(type: K, listener: (this: MediaStream, ev: MediaRecorderEventMap[K]) => any, options?: boolean | AddEventListenerOptions): void;
+
+    addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions): void;
+
+    removeEventListener<K extends keyof MediaRecorderEventMap>(type: K, listener: (this: MediaStream, ev: MediaRecorderEventMap[K]) => any, options?: boolean | EventListenerOptions): void;
+
+    removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions): void;
+
+}
+
 export class GridworldTrajectoryPlayer extends HTMLElement {
     protected game: GridworldGame;
     protected trajectory: GridworldState[];
@@ -13,6 +79,8 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
     protected playButton: HTMLElement
     protected orientation: number[]
     protected diffs: GridworldState[]
+    protected recorder: MediaRecorder
+    protected chunks: Blob[]
 
     constructor() {
         super();
@@ -85,11 +153,44 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
     play() {
         this.reset()
         this.game.scene.scene.start()
+        let stream = this.shadow.querySelector("canvas").captureStream(25);
+        this.chunks = [];
+
+        var options = {mimeType: "video/webm; codecs=vp9"};
+        this.recorder = new MediaRecorder(stream, options);
+        this.recorder.addEventListener("dataavailable", (event: MediaRecorderDataAvailableEvent) => {
+            console.log("data-available");
+            if (event.data.size > 0) {
+                this.chunks.push(event.data);
+            } else {
+
+            }
+        });
+        this.recorder.addEventListener("stop", ()=> {            this.download()})
+        this.recorder.start();
         setTimeout(() => {
             this.intervalId = setInterval(() => {
                 this.advance()
             }, 300);
         }, 200)
+
+
+
+
+    }
+
+    download() {
+        var blob = new Blob(this.chunks, {
+            type: "video/webm"
+        });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        document.body.appendChild(a);
+        a.style.display = "none";
+        a.href = url;
+        a.download = "test.webm";
+        a.click();
+        window.URL.revokeObjectURL(url);
     }
 
     advance() {
@@ -99,6 +200,7 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
             clearInterval(this.intervalId)
             this.intervalId = null
             this.game.scene.scene.pause()
+            this.recorder.stop()
             return;
         }
         const diff = this.diffs[this.currentIndex]
