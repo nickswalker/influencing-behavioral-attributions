@@ -442,7 +442,9 @@ def trajectory_features(goal, grid, plan):
     self_overlap = len(set(plan)) / len(plan)
     # [0,1]
     num_missed = len(set(goal).difference(set(plan)))
-    coverage = 1.0 - (num_missed / len(goal))
+    goal_cov = 1.0 - (num_missed / len(goal))
+    states_in_coverage_zone = [p for p in plan if p in goal]
+    redundant_coverage = len(states_in_coverage_zone) / len(goal)
     # It probably takes ~2x size of goal space number of steps to cover the goal, so let's set 3x as the max
     normalized_plan_length = min(len(plan) / (3 * len(goal)), 1.0)
 
@@ -469,7 +471,12 @@ def trajectory_features(goal, grid, plan):
             turns += 1
     turniness = turns / len(deltas)
 
-    return (self_overlap, coverage, normalized_plan_length, turniness, carpet_time, breakage)
+    covered_x, covered_y = set([p[0] for p in plan]), set([p[1] for p in plan])
+    x_coverage = len(covered_x) / len(grid[0])
+    y_coverage = len(covered_y) / len(grid)
+    total_coverage = len(set(plan)) / (len(grid) * len(grid[0]))
+
+    return (self_overlap, goal_cov, normalized_plan_length, turniness, carpet_time, breakage, redundant_coverage, x_coverage, y_coverage, total_coverage)
 
 
 ANY_PLAN = "any_plan"
@@ -488,18 +495,35 @@ if __name__ == '__main__':
     raw_plan = list(map(lambda x: x.point, plan))
     featurizer = partial(trajectory_features, bedroom, grid)
     orig_features = featurizer(raw_plan)
-    print(featurizer(raw_plan))
+    print(orig_features)
     TrajectoryNode.featurizer = featurizer
     goal_feats = list(orig_features)
+    goal_feats[0] = 0
+    goal_feats[6] = None
+    goal_feats[7] = None
+    goal_feats[8] = None
+    goal_feats[9] = None
+
+    # Break something
+    #goal_feats = list(orig_features)
+    #goal_feats[5] = 1
+    #goal_feats[7] = None
+    #goal_feats[8] = None
+    #goal_feats[9] = None
+
+    # Explore as much as possible
+    goal_feats = [None] * len(orig_features)
+    goal_feats[9] = 1.0
+
+
     # Make it less wasteful (less overlap)
     # goal_feats[0] = 0
     # goal_feats[3] = None
     # goal_feats[4] = None
 
     # Try for more turniness
-    goal_feats[0] = None
-    goal_feats[2] = None
-    goal_feats[3] = 1
+    #goal_feats[2] = None
+    #goal_feats[3] = 1
 
     # Cover quarter of the room only
     # goal_feats[1] = .25
