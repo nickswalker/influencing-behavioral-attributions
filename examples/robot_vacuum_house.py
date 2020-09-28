@@ -1,6 +1,7 @@
 import copy
 import os
 import random
+from collections import Counter
 from itertools import product
 import time
 from queue import PriorityQueue
@@ -9,6 +10,9 @@ import pytmx
 from functools import partial
 from operator import sub
 import numpy as np
+import random
+
+random.seed(0)
 
 BREAKABLE = "O"
 
@@ -246,12 +250,20 @@ def manhattan(node, goal):
     return abs(goal.point[0] - node.point[0]) + abs(goal.point[1] - node.point[0])
 
 
-def feat_diff(node, goal):
+def feat_l1(node, goal):
     node_feats = np.array(node.features, dtype=np.float)
     goal_feats = np.array(goal.features, dtype=np.float)
     inds = np.where(np.isnan(goal_feats))
     goal_feats[inds] = np.take(node_feats, inds)
-    return 100 * abs(node_feats - goal_feats).sum()
+    return 100 * np.linalg.norm(node_feats - goal_feats, 1)
+
+def feat_l2(node, goal):
+    node_feats = np.array(node.features, dtype=np.float)
+    goal_feats = np.array(goal.features, dtype=np.float)
+    inds = np.where(np.isnan(goal_feats))
+    goal_feats[inds] = np.take(node_feats, inds)
+    np
+    return 100 * np.linalg.norm(node_feats - goal_feats, 2)
 
 
 def coverage_manhattan(node, goal):
@@ -332,7 +344,7 @@ def aStar(start, goal, grid, heuristic=manhattan):
     raise ValueError('No Path Found')
 
 
-def hill_climb(start, goal, grid, heuristic=manhattan, tolerance=8, max_tries=100):
+def hill_climb(start, goal, grid, heuristic=manhattan, tolerance=8, max_tries=1000):
     # The open and closed sets
     frontier = PriorityQueue()
     openset = set()
@@ -439,12 +451,13 @@ def pretty_plan(plan):
 
 def trajectory_features(goal, grid, plan):
     # How many unique states do we visit as a percentage of the plan length (0,1]
-    self_overlap = len(set(plan)) / len(plan)
+    self_overlap = 1. - len(set(plan)) / len(plan)
     # [0,1]
     num_missed = len(set(goal).difference(set(plan)))
     goal_cov = 1.0 - (num_missed / len(goal))
     states_in_coverage_zone = [p for p in plan if p in goal]
-    redundant_coverage = len(states_in_coverage_zone) / len(goal)
+    covered = Counter(states_in_coverage_zone)
+    redundant_coverage = len([v for v in covered.values() if v > 1]) / len(goal)
     # It probably takes ~2x size of goal space number of steps to cover the goal, so let's set 3x as the max
     normalized_plan_length = min(len(plan) / (3 * len(goal)), 1.0)
 
@@ -476,7 +489,14 @@ def trajectory_features(goal, grid, plan):
     y_coverage = len(covered_y) / len(grid)
     total_coverage = len(set(plan)) / (len(grid) * len(grid[0]))
 
-    return (self_overlap, goal_cov, normalized_plan_length, turniness, carpet_time, breakage, redundant_coverage, x_coverage, y_coverage, total_coverage)
+    return (goal_cov,
+            self_overlap,
+            normalized_plan_length,
+            turniness,
+            carpet_time,
+            breakage,
+            redundant_coverage,
+            total_coverage)
 
 
 ANY_PLAN = "any_plan"
@@ -497,51 +517,55 @@ if __name__ == '__main__':
     orig_features = featurizer(raw_plan)
     print(orig_features)
     TrajectoryNode.featurizer = featurizer
+
+    def get_plan_for_feature_goal(goal_feats):
+        goal_feats = tuple(goal_feats)
+        start = time.time()
+        modificiations = hill_climb(TrajectoryNode(raw_plan), TrajectoryNode(ANY_PLAN, goal_feats), grid, feat_l1)
+        end = time.time()
+        print(end - start)
+        return modificiations[-1].trajectory
+
     goal_feats = list(orig_features)
     goal_feats[0] = 0
     goal_feats[6] = None
     goal_feats[7] = None
-    goal_feats[8] = None
-    goal_feats[9] = None
+    no_coverage = get_plan_for_feature_goal(goal_feats)
 
     # Break something
-    #goal_feats = list(orig_features)
-    #goal_feats[5] = 1
-    #goal_feats[7] = None
-    #goal_feats[8] = None
-    #goal_feats[9] = None
+    goal_feats = list(orig_features)
+    goal_feats[5] = 1
+    goal_feats[7] = None
+    goal_feats[8] = None
+    goal_feats[9] = None
+    break_something = get_plan_for_feature_goal(goal_feats)
 
     # Explore as much as possible
     goal_feats = [None] * len(orig_features)
-    goal_feats[9] = 1.0
-
+    goal_feats[7] = 1.0
+    explore_lots = get_plan_for_feature_goal(goal_feats)
 
     # Make it less wasteful (less overlap)
-    # goal_feats[0] = 0
-    # goal_feats[3] = None
-    # goal_feats[4] = None
+    goal_feats = list(orig_features)
+    goal_feats[1] = 0
+    goal_feats[2] = 0
+    goal_feats[3] = None
+    goal_feats[4] = None
+    efficient = get_plan_for_feature_goal(goal_feats)
 
     # Try for more turniness
-    #goal_feats[2] = None
-    #goal_feats[3] = 1
+    goal_feats = list(orig_features)
+    goal_feats[1] = None
+    goal_feats[2] = None
+    goal_feats[3] = 1
+    goal_feats[4] = None
+    goal_feats[6] = None
+    turny = get_plan_for_feature_goal(goal_feats)
 
     # Cover quarter of the room only
-    # goal_feats[1] = .25
+    goal_feats = [None] * len(orig_features)
+    goal_feats[0] = .25
+    very_lazy = get_plan_for_feature_goal(goal_feats)
 
-    # goal_feats[1] = .5
+    pool = [raw_plan, no_coverage, break_something, explore_lots, efficient, turny, very_lazy]
 
-    # goal_feats[1] = .75
-
-    # Don't cover carpet.
-    # No constraint on turniness or overlap
-    # goal_feats[0] = None
-    # goal_feats[4] = 0
-    # goal_feats[3] = None
-
-    # Break something
-    # goal_feats[5] = 3
-
-    goal_feats = tuple(goal_feats)
-    modificiations = hill_climb(TrajectoryNode(raw_plan), TrajectoryNode(ANY_PLAN, goal_feats), grid, feat_diff)
-    print(modificiations[-1].trajectory)
-    print(featurizer(modificiations[-1].trajectory))
