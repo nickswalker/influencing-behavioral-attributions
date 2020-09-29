@@ -16,6 +16,25 @@ random.seed(0)
 
 BREAKABLE = "O"
 
+import shelve
+
+
+def shelve_it(file_name):
+    d = shelve.open(file_name)
+
+    def decorator(func):
+        def new_func(*args):
+            key = repr(tuple(args))
+            if key not in d:
+                d[key] = func(*args)
+            else:
+                print("cache hit")
+            return d[key]
+
+        return new_func
+
+    return decorator
+
 
 class TrajectoryNode:
     featurizer = None
@@ -257,6 +276,7 @@ def feat_l1(node, goal):
     goal_feats[inds] = np.take(node_feats, inds)
     return 100 * np.linalg.norm(node_feats - goal_feats, 1)
 
+
 def feat_l2(node, goal):
     node_feats = np.array(node.features, dtype=np.float)
     goal_feats = np.array(goal.features, dtype=np.float)
@@ -412,6 +432,7 @@ def hill_climb(start, goal, grid, heuristic=manhattan, tolerance=8, max_tries=10
     return path[::-1]
 
 
+@shelve_it("trajectoriesa.shelf")
 def get_coverage_plan(start, to_cover, grid_orig):
     return aStar(CoverageNode(to_cover, start), CoverageNode([], start), grid_orig, coverage_manhattan)
 
@@ -474,7 +495,8 @@ def trajectory_features(goal, grid, plan):
             carpet_points.append(point)
         elif contents == "O":
             breakage += 1
-    carpet_time = len(carpet_points)
+    carpet_time = min(1.0, len(carpet_points) / len(goal))
+    breakage =  min(1.0, breakage / len(goal))
 
     turns = 0
     for i, delta in enumerate(deltas):
@@ -499,6 +521,80 @@ def trajectory_features(goal, grid, plan):
             total_coverage)
 
 
+def sample_diverse(pool, target, grid):
+    feat_pool = list(map(TrajectoryNode.featurizer, pool))
+    feat_pool = np.array(feat_pool, dtype=np.float)
+
+    orig_pool_size = len(pool)
+    for i in range(target):
+        for j in range(orig_pool_size):
+            def sum_l1_dist(node, goal):
+                node_feats = np.array(node.features, dtype=np.float)
+                total = np.linalg.norm(node_feats - node_feats, 1, axis=1)
+                return len(node_feats) * target - total.sum()
+
+            def mean_l1_dist(node, goal):
+                node_feats = np.array(node.features, dtype=np.float)
+                total = np.linalg.norm(feat_pool - node_feats, 1, axis=1)
+                # Can be at most 1 away on each feature dimension, so max norm per point scales in
+                # feat dim.
+                return len(node_feats) - total.mean()
+
+            def min_l1_dist(node, goal):
+                node_feats = np.array(node.features, dtype=np.float)
+                lowest = 1000
+                for other in feat_pool:
+                    lowest = min(np.linalg.norm(node_feats - other, 1), lowest)
+                return len(node_feats) * target - lowest
+
+            def feat_var(node, goal):
+                node_feats = np.array(node.features, dtype=np.float)
+                return len(node_feats) * target - np.vstack([node_feats , feat_pool]).var(axis=0).sum()
+
+            start = time.time()
+            modificiations = hill_climb(TrajectoryNode(pool[j]),
+                                        TrajectoryNode(ANY_PLAN, tuple([1.0] * len(feat_pool[0]))), grid,
+                                        mean_l1_dist, max_tries=500, tolerance=0.2)
+            end = time.time()
+            print(end - start)
+            new = modificiations[-1].trajectory
+            print("Diversity mean_l1_dist: {}".format(mean_l1_dist(modificiations[-1], None) - 8))
+            print("Diversity feat_var sum: {}".format(feat_var(modificiations[-1], None)))
+            pool.append(new)
+            feat_pool = np.vstack([feat_pool, np.array(TrajectoryNode.featurizer(new), dtype=np.float)])
+
+    return pool, feat_pool
+
+
+def sample_neighbors(pool, target, grid):
+    feat_pool = list(map(TrajectoryNode.featurizer, pool))
+    feat_pool = np.array(feat_pool, dtype=np.float)
+
+    orig_pool_size = len(pool)
+
+    for j in range(orig_pool_size):
+        for i in range(target):
+            traj_feats = TrajectoryNode.featurizer(pool[j])
+            def mean_l1_dist(node, goal):
+                node_feats = np.array(node.features, dtype=np.float)
+                total = np.linalg.norm(traj_feats - node_feats, 1)
+                # We're targeting "nearby" trajectories
+                return abs(.2 - total.mean())
+
+            start = time.time()
+            modificiations = hill_climb(TrajectoryNode(pool[j]),
+                                        TrajectoryNode(ANY_PLAN, tuple([1.0] * len(feat_pool[0]))), grid,
+                                        mean_l1_dist, max_tries=500, tolerance=0.01)
+            end = time.time()
+            print(end - start)
+            new = modificiations[-1].trajectory
+            print("Diversity mean_l1_dist: {}".format(mean_l1_dist(modificiations[-1], None)))
+            pool.append(new)
+            feat_pool = np.vstack([feat_pool, np.array(TrajectoryNode.featurizer(new), dtype=np.float)])
+
+    return pool, feat_pool
+
+
 ANY_PLAN = "any_plan"
 
 if __name__ == '__main__':
@@ -518,13 +614,18 @@ if __name__ == '__main__':
     print(orig_features)
     TrajectoryNode.featurizer = featurizer
 
+
+    @shelve_it("trajectories.shelf")
     def get_plan_for_feature_goal(goal_feats):
         goal_feats = tuple(goal_feats)
         start = time.time()
-        modificiations = hill_climb(TrajectoryNode(raw_plan), TrajectoryNode(ANY_PLAN, goal_feats), grid, feat_l1)
+        modificiations = hill_climb(TrajectoryNode(raw_plan), TrajectoryNode(ANY_PLAN, goal_feats), grid, feat_l1,
+                                    max_tries=500)
         end = time.time()
-        print(end - start)
-        return modificiations[-1].trajectory
+        new_plan = modificiations[-1].trajectory
+        print("Took {}, got within {}.".format(end - start, feat_l1(TrajectoryNode(raw_plan), TrajectoryNode(new_plan))))
+        return  new_plan
+
 
     goal_feats = list(orig_features)
     goal_feats[0] = 0
@@ -534,16 +635,14 @@ if __name__ == '__main__':
 
     # Break something
     goal_feats = list(orig_features)
-    goal_feats[5] = 1
+    goal_feats[5] = .1
     goal_feats[7] = None
-    goal_feats[8] = None
-    goal_feats[9] = None
     break_something = get_plan_for_feature_goal(goal_feats)
 
     # Explore as much as possible
     goal_feats = [None] * len(orig_features)
     goal_feats[7] = 1.0
-    explore_lots = get_plan_for_feature_goal(goal_feats)
+    # explore_lots = get_plan_for_feature_goal(goal_feats)
 
     # Make it less wasteful (less overlap)
     goal_feats = list(orig_features)
@@ -559,7 +658,6 @@ if __name__ == '__main__':
     goal_feats[2] = None
     goal_feats[3] = 1
     goal_feats[4] = None
-    goal_feats[6] = None
     turny = get_plan_for_feature_goal(goal_feats)
 
     # Cover quarter of the room only
@@ -567,5 +665,17 @@ if __name__ == '__main__':
     goal_feats[0] = .25
     very_lazy = get_plan_for_feature_goal(goal_feats)
 
-    pool = [raw_plan, no_coverage, break_something, explore_lots, efficient, turny, very_lazy]
+    # pool = [raw_plan, no_coverage, break_something, explore_lots, efficient, turny, very_lazy]
+    pool = [raw_plan]
+    for traj in pool:
+        print("\"" + " ".join(map(str, traj)) + "\",")
 
+    # new_pool, pool_feat = sample_diverse(pool, 20, grid)
+    new_pool, pool_feat = sample_neighbors(pool, 2, grid)
+
+    for traj in new_pool:
+        print("\"" + " ".join(map(str, traj)) + "\",")
+    print("-------")
+    np.set_printoptions(precision=3)
+    for feat in pool_feat:
+        print("\"" + str(feat) + "\",")
