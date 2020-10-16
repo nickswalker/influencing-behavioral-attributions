@@ -17,6 +17,22 @@ export function textToStates(states: string) {
     })
 }
 
+export function statesToText(states: GridworldState[]) {
+    let out = "["
+    const tupleStrings = states.map((state) => {
+        let pos = state.agentPositions[0]
+        return "(" + pos.x + ", " + pos.y + ")"
+    })
+    for (let i = 0; i < tupleStrings.length; i++) {
+        if (i > 0) {
+            out += ","
+        }
+        out += tupleStrings[i]
+    }
+    out += "]"
+    return out;
+}
+
 export function textToTerrain(grid: string[]): GridMap {
     const asChar = grid.map((r) => [...r])
     let terrain: TerrainMap = []

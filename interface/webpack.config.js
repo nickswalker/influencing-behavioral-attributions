@@ -4,6 +4,7 @@ module.exports = {
     mode: "development",
     entry: {
         "interactive": "./src/interactive-index.ts",
+        "batch": "./src/batch-index.ts",
         "browse-batch": "./src/browse-batch-index.ts",
         "sorting": './src/sorting-index.ts',
         "show-groupings": './src/show-groupings-index.ts',

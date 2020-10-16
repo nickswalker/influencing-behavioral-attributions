@@ -156,7 +156,6 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
         }
 
         this.game = new GridworldGame( this.gameContainer, 32, "assets/", this.getAttribute("map-name"),terrain)
-        this.game.interactive = false
         this.game.init();
         this.game.game.events.once("postrender", () =>{
             this.game.scene.scene.pause()
