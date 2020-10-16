@@ -3,8 +3,8 @@ import "./gridworld-game"
 import "./gridworld-trajectory-display"
 import "./gridworld-trajectory-player"
 import {setUpPages} from "./paged-navigation";
-import {shuffleArray} from "./utils";
-import {Direction, TerrainMap, textToTerrain} from "./gridworld-mdp";
+import {shuffleArray, textToTerrain} from "./utils";
+import {Actions, TerrainMap} from "./gridworld-mdp";
 import {GridworldGame} from "./gridworld-game";
 
 

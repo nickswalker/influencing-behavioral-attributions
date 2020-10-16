@@ -1,5 +1,6 @@
-import {GridworldState, textToStates, textToTerrain} from "./gridworld-mdp";
+import {GridMap, GridworldState} from "./gridworld-mdp";
 import {GridworldGame} from "./gridworld-game";
+import {hashCode, textToStates, textToTerrain} from "./utils";
 
 declare global {
     interface HTMLCanvasElement {
@@ -81,6 +82,7 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
     protected diffs: GridworldState[]
     protected recorder: MediaRecorder
     protected chunks: Blob[]
+    protected trajHash: number
 
     constructor() {
         super();
@@ -93,17 +95,20 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
         if (!this.playButton) {
             this.buildSkeleton()
         }
-        if (!this.getAttribute("terrain") || !this.getAttribute("trajectory")) {
+        if (!this.getAttribute("terrain") && !this.getAttribute("map-name")) {
             return;
         }
-        if (!this.game) {
+        if ( !this.getAttribute("trajectory")) {
+            return;
+        }
+        if (!this.game || hashCode(this.getAttribute("trajectory")) !== this.trajHash) {
             this.buildGame()
         }
 
     }
 
     static get observedAttributes() {
-        return ["terrain", "trajectory"]
+        return ["terrain", "trajectory", "map-name"]
     }
 
     connectedCallback() {
@@ -132,10 +137,15 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
     buildGame() {
         // Clean out any previous running game
         this.game?.close()
-        let terrainData = this.getAttribute("terrain").split("'")
-        terrainData = terrainData.filter((value: any, index: number) => {
-            return index % 2 == 1;
-        });
+        this.trajHash = hashCode(this.getAttribute("trajectory"))
+        let terrain: GridMap = null
+        if (this.getAttribute("terrain")) {
+            let terrainData = this.getAttribute("terrain").split("'")
+            terrainData = terrainData.filter((value: any, index: number) => {
+                return index % 2 == 1;
+            });
+            terrain = textToTerrain(terrainData)
+        }
         this.trajectory = textToStates(this.getAttribute("trajectory"))
         this.orientation = [0, -1]
         this.diffs = [new GridworldState([{x: 1, y:0}])]
@@ -145,50 +155,54 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
             this.diffs.push(new GridworldState([{x: current.x - prev.x, y: current.y - prev.y}]))
         }
 
-        this.game = new GridworldGame( this.gameContainer, 32)
+        this.game = new GridworldGame( this.gameContainer, 32, "assets/", this.getAttribute("map-name"),terrain)
         this.game.interactive = false
         this.game.init();
+        this.game.game.events.once("postrender", () =>{
+            this.game.scene.scene.pause()
+        })
     }
 
-    play() {
-        this.reset()
-        this.game.scene.scene.start()
-        let stream = this.shadow.querySelector("canvas").captureStream(25);
-        this.chunks = [];
+    configureRecorder() {
+        const options = {mimeType: "video/webm; codecs=vp9"};
 
-        var options = {mimeType: "video/webm; codecs=vp9"};
+        let stream = this.shadow.querySelector("canvas").captureStream(25);
         this.recorder = new MediaRecorder(stream, options);
         this.recorder.addEventListener("dataavailable", (event: MediaRecorderDataAvailableEvent) => {
-            console.log("data-available");
             if (event.data.size > 0) {
                 this.chunks.push(event.data);
             } else {
 
             }
         });
-        this.recorder.addEventListener("stop", ()=> {            this.download()})
-        this.recorder.start();
+        this.chunks = [];
+
+    }
+
+    play() {
+        this.reset()
+        this.game.scene.scene.resume()
+
+        this.recorder?.start();
+
         setTimeout(() => {
             this.intervalId = setInterval(() => {
                 this.advance()
             }, 300);
         }, 200)
 
-
-
-
     }
 
-    download() {
-        var blob = new Blob(this.chunks, {
+    download(name:string) {
+        const blob = new Blob(this.chunks, {
             type: "video/webm"
         });
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
         document.body.appendChild(a);
         a.style.display = "none";
         a.href = url;
-        a.download = "test.webm";
+        a.download = name + ".webm";
         a.click();
         window.URL.revokeObjectURL(url);
     }
@@ -200,11 +214,14 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
             clearInterval(this.intervalId)
             this.intervalId = null
             this.game.scene.scene.pause()
-            this.recorder.stop()
+            this.recorder?.stop()
             return;
         }
         const diff = this.diffs[this.currentIndex]
-        if (this.orientation[0] != diff.agentPositions[0].x || this.orientation[1] != diff.agentPositions[0].y) {
+        if (diff.agentPositions[0].x == 0 && diff.agentPositions[0].y == 0) {
+
+        }
+        else if (this.orientation[0] != diff.agentPositions[0].x || this.orientation[1] != diff.agentPositions[0].y) {
             this.game.rotateAgent(diff.agentPositions[0].x, diff.agentPositions[0].y)
             this.orientation = [diff.agentPositions[0].x, diff.agentPositions[0].y]
             return;
@@ -223,6 +240,7 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
         this.currentIndex = 0;
         this.state = this.trajectory[0];
         this.game.drawState(this.state, false);
+        this.game.scene.clearTrail()
     }
 
 

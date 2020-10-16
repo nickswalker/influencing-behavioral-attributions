@@ -7,7 +7,6 @@
 "preserveConstEnums": true,
 "sourceRoot": "./src/",
 "rootDir": "./src/",
-"outDir": "build",
 "declaration": true,
   "noImplicitAny": true,
 "sourceMap": true,
