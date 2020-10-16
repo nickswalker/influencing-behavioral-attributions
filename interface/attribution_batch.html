@@ -2,6 +2,7 @@
 <script src="https://assets.crowd.aws/crowd-html-elements.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mustache.js/3.0.1/mustache.js" integrity="sha256-eWzD4VoILNfodzTHdCIMKX/k47LcM3hmpTfFhAR7Cj0=" crossorigin="anonymous"></script>
 <script src="https://cdn.plyr.io/3.6.2/plyr.js"></script>
+<script src="//cdn.jsdelivr.net/npm/phaser@3.24.1/dist/phaser.js"></script>
 <link rel="stylesheet" href="https://cdn.plyr.io/3.6.2/plyr.css" />
 
 <!-- Seedable version of Math.random -->
@@ -68,14 +69,11 @@
         height: 24px;
     }
 
-
-
     crowd-radio-group > label {
         padding: 0;
         margin-right: 12px;
         display: none;
     }
-
 
     .labels {
         height: 60px;
@@ -237,6 +235,19 @@
     </div>
 </template>
 
+<template id="demonstration">
+    <div class="attribution">
+        <h2>Robot {{robotNumber}}: {{attribution}}</h2>
+        <gridworld-interactive map-name="house_goal" id="demo{{condition}}"></gridworld-interactive>
+
+
+        <h3>Please briefly explain how you made the robot seem {{attribution}}:</h3>
+        <crowd-input {{required}} name="con_{{condition}}_explain"></crowd-input>
+    </div>
+        <hr/>
+
+</template>
+
 
 <!-- You must include crowd-form so that your task submits answers to MTurk -->
 <crowd-form answer-format="flatten-objects">
@@ -245,17 +256,13 @@
 
         <div class="page welcome">
             <h1>Welcome</h1>
-            <p>In this HIT you'll look at videos showing a robot vacuum cleaner that's been asked to clean the bedroom. Each will look something like this example:</p>
-            <div class="video-container">
-                <video controls disablePictureInPicture src="https://mturk.nickwalker.us/attribution/batch/1/example.webm" class="{{unwatched}}"></video>
-                <div class="video-controls">
-                    <input type="button" value="Restart" class="restart" name="restart"/>
-                </div>
-            </div>
 
-            <p>We want to understand how people perceive the behavior of these robots, so we'll ask you to rate each robot on several scales.
-                At the end, we'll ask your age and gender. Note that before we accept your work, we'll check that your explanations are plausible.</p>
-            <p>The whole task should take 15 minutes. You <b>can</b> complete this HIT multiple times.
+            <p>This HIT has 2 parts; the first involves controlling a robot to clean a bedroom in a game, and the second involves watching and rating several videos of robots cleaning a bedroom.</p>
+            
+            <img src="assets/environment.png">
+            <p>
+                At the end, we'll ask your age and gender. Note that before we accept your work, we'll check for indications that you didn't follow instructions</p>
+            <p>The whole task should take 20 minutes. You <b>can</b> complete this HIT multiple times.
                 This HIT is designed to be compatible with recent version of desktop Chrome and Firefox. <b>It does not support mobile devices or Safari</b>.</p>
 
             <p>The next pages describe this research and the data collected in more detail.</p>
@@ -300,19 +307,51 @@
         </div>
 
         <div class="page">
-            <h2>Instructions and Notes</h2>
+            <h2>Part 1: Controlling the Robot</h2>
+            <p>In this part, we'll tell you a style (like "curious" or "efficient") and ask you to make the robot clean the bedroom in that style. This can be tricky, but try to think of what you can make the robot do that would make someone watching say that it's behaving in the given style. You'll repeat this for a total of 3 styles. Here's the interface you'll use for controlling the robot:</p>
+
+            <gridworld-interactive id="instructional" map-name="house_goal"></gridworld-interactive>
+
+            <ul>
+                <li><b>Click on the interface</b> to enable the controls. Click elsewhere on the page to disable them.</li>
+                <li>Use the <b>arrow keys</b> to move the robot up, down, right, or left</li>
+                <li>Press the <b>spacebar if you want the robot to stop</b> in a location</li>
+                <li>The green trail drawn behind the robot is to help you remember the robot's motion</li>
+                <li>The blue-shaded squares are the bedroom area</li>
+                <li>If you make a mistake and want to restart, press the reset button
+                </li>
+            </ul>
+
+        </div>
+
+
+        <div class="page" id="demonstration-insertion-region">
+
+        </div>
+        <div class="page">
+            <h2>Part 2: Rating robots</h2>
+            <p>In this part you'll look at videos showing a robot vacuum cleaner that's been asked to clean the bedroom. We'll ask you to rate each robot on several scales. You'll repeat this for a total of 3 videos. Each video will look something like this example:</p>
+
+            <div class="video-container">
+                <video controls disablePictureInPicture src="https://mturk.nickwalker.us/attribution/batch/1/example.webm" class="{{unwatched}}"></video>
+                <div class="video-controls">
+                    <input type="button" value="Restart" class="restart" name="restart"/>
+                </div>
+            </div>
+            
+            
             <ul>
                 <li>The green trail drawn behind the robot is to help you remember the robot's motion</li>
                 <li>Once the video has played once, you can scrub through the video again or restart it if you need to watch it again</li>
                 <li>The robot can only move in cardinal directions (up, down, right, left)
-            </li>
+                </li>
                 <li>The robot can also pause in place</li>
                 <li> It's okay if you don't know how to rate a certain question; mark it "I don't know"
-            </li></ul>
-            <p>The next 6 pages of videos and questions are the task.</p>
+                </li></ul>
+ 
         </div>
 
-        <div id="insertion-region">
+        <div id="attribution-insertion-region">
 
         </div>
         <div class="page demographics">
@@ -346,5 +385,9 @@
 <script>
     window.trajectoryIds = [0, 1, 2 ,3, 4, 5]
     //window.trajectoryIds = [${id0}, ${id1}, ${id2}, ${id3}, ${id4}, ${id5}]
+    window.attributions = ["curious", "brave", "efficient"]
+    //window.trajectoryIds = [${attr0}, ${attr1}, ${attr2}]
 </script>
-<script src="src/batch-index.js" type="module"></script>
+
+<script src="dist/vendors.bundle.js" type="module"></script>
+<script src="dist/batch.bundle.js" type="module"></script>

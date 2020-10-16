@@ -1,5 +1,6 @@
 import {setUpPages} from "./paged-navigation.js";
 import {shuffleArray} from "./utils.js";
+import "./gridworld-interactive"
 
 declare global {
     interface Mustache {
@@ -11,18 +12,28 @@ declare global {
     interface Math {
         seedrandom(seed: number): any
     }
-    var Plyr: Plyr
-    var trajectoryIds: number[]
+
+    let Plyr: Plyr;
+    var trajectoryIds: number[];
+    var attributions: string[];
 
 }
 
-function render(trajectoryIds: number[]) {
-    let insertionContainer = document.querySelector("#insertion-region")
+function render(attributions: string[], trajectoryIds: number[]) {
+    let attributionInsertionContainer = document.querySelector("#attribution-insertion-region")
     let conditionTemplate = document.querySelector("#attribution").innerHTML;
 
     for (let i = 0; i < trajectoryIds.length; i++) {
         let condition = Mustache.render(conditionTemplate, {"trajectoryId": String(trajectoryIds[i]), "condition": String(i), "robotNumber": String(i + 1), "required":"required", "unwatched": "unwatched"})
-        insertionContainer.innerHTML += condition;
+        attributionInsertionContainer.innerHTML += condition;
+    }
+
+    let demonstrationInsertionContainer = document.querySelector("#demonstration-insertion-region")
+    let demonstrationTemplate = document.querySelector("#demonstration").innerHTML;
+
+    for (let i = 0; i < attributions.length; i++) {
+        let condition = Mustache.render(demonstrationTemplate, {"attribution": String(attributions[i]), "condition": String(i), "robotNumber": String(i + 1), "required":"required"})
+        demonstrationInsertionContainer.innerHTML += condition;
     }
 
 }
@@ -150,7 +161,7 @@ function randomizeQuestionOrder(){
 }
 
 
-render(window.trajectoryIds)
+render(window.attributions,window.trajectoryIds)
 randomizeQuestionOrder()
 Plyr.setup('video', {"displayDuration": false, tooltips: { controls: false, seek: false}, controls: ['play-large', 'play', 'progress']});
 addVideoListeners()
