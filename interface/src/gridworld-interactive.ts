@@ -11,6 +11,7 @@ export class GridworldInteractive extends HTMLElement {
     protected shadow: ShadowRoot
     protected gameContainer: HTMLElement
     protected chunks: Blob[]
+    protected enabled: boolean
 
     constructor() {
         super();
@@ -62,6 +63,7 @@ export class GridworldInteractive extends HTMLElement {
     buildGame() {
         // Clean out any previous running game
         this.game?.close()
+        this.enabled = true
         let terrain: GridMap = null
         let mapName = null
         if (this.getAttribute("terrain")) {
@@ -92,6 +94,12 @@ export class GridworldInteractive extends HTMLElement {
             })
         }
         this.addEventListener("click", (event) => {
+            document.querySelectorAll<GridworldInteractive>("gridworld-interactive").forEach((element) => {
+                if (element === this) {
+                    return;
+                }
+                element.disable()
+            })
             event.stopPropagation();
             this.enable()
         })
@@ -99,38 +107,53 @@ export class GridworldInteractive extends HTMLElement {
 
 
     reset() {
-        this.state = this.game.scene.mdp.getStartState();
         this.trajectory = [];
         this.removeAttribute("trajectory")
-        this.game.state = this.state
-        this.game.scene.currentState = this.state
-        this.game.drawState(this.state, true);
-        this.game.scene.clearTrail()
+        this.game.scene.reset()
 
     }
 
     disable() {
-        this.game.scene.interactive = false;
-        this.game.game.input.enabled = false;
-        this.game.game.input.keyboard.preventDefault = false;
-        this.game.scene.scene.pause()
-        this.game.game.loop.sleep()
-        this.gameContainer.style.opacity = "0.7"
+        if (!this.enabled) {
+            return
+        }
+        this.enabled = false
+
+        //this.game.game.loop.sleep()
+
+        this.game.game.renderer.snapshot((image: HTMLImageElement) => {
+            this.game.scene.scene.sleep()
+            this.game.scene.interactive = false;
+            this.game.game.input.enabled = false;
+            this.game.game.input.keyboard.preventDefault = false;
+            this.gameContainer.querySelector("canvas").hidden = true
+            image.style.opacity = "0.7"
+            this.gameContainer.appendChild(image);
+            // Clear out any manual styling from Phaser
+            this.gameContainer.setAttribute("style", "")
+        });
 
     }
 
     enable() {
+        if (this.enabled) {
+            return
+        }
+        this.enabled = true
         this.game.scene.interactive = true;
         this.game.game.input.enabled = true;
         this.game.game.input.keyboard.preventDefault = true;
-        this.game.scene.scene.resume()
-        this.game.game.loop.wake()
-        this.gameContainer.style.opacity = "1.0"
+        this.game.scene.scene.wake()
+        //this.game.game.loop.wake()
+        this.gameContainer.querySelectorAll("img").forEach((element) => {
+            element.remove()
+        })
+        this.gameContainer.querySelector("canvas").hidden = false
     }
 
 }
 
-window.addEventListener("click", (event: MouseEvent) => {
+document.addEventListener("click", (event: MouseEvent) => {
     document.querySelectorAll<GridworldInteractive>("gridworld-interactive").forEach((element) => {
         element.disable()
     })

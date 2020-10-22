@@ -1,6 +1,5 @@
 import "phaser"
 import {Actions, GridMap, Gridworld, GridworldState, Position, TerrainType} from "./gridworld-mdp"
-import KeyboardManager = Phaser.Input.Keyboard.KeyboardManager;
 import CursorKeys = Phaser.Types.Input.Keyboard.CursorKeys;
 import Key = Phaser.Input.Keyboard.Key;
 
@@ -17,7 +16,6 @@ export class GridworldGame {
     private gameHeight: number
     container: HTMLElement
     scene: any
-    state: GridworldState
     assetsPath: string
     game: Phaser.Game
     _stateToDraw: GridworldState
@@ -87,11 +85,6 @@ export class GridworldGame {
         this._rotationToDraw = [x, y]
     }
 
-    setAction(player_index: number, action: Actions) {
-        const nextState = this.scene.mdp.transition(this.scene.currentState, action);
-        this._stateToDraw = nextState;
-    }
-
     close() {
         this.game.renderer.destroy();
         this.game.loop.stop();
@@ -129,14 +122,21 @@ export class GridworldScene extends Phaser.Scene {
     sceneSprite: SpriteMap
     mdp: Gridworld
     currentState: GridworldState
+    private prevState: GridworldState
     mapName: string
     _interactive: boolean
     _trailGraphics: Phaser.GameObjects.Graphics
     inputDelayTimeout: Phaser.Time.TimerEvent
+    waitTimeout: Phaser.Time.TimerEvent
     ANIMATION_DURATION = 50
     map: any
     cursors: CursorKeys
     spacebar: Key
+    keysSprite: Phaser.GameObjects.Sprite
+    waitBar: Phaser.GameObjects.Graphics
+    waitBox: Phaser.GameObjects.Graphics
+    interactionStarted: boolean
+    interactionFinished: boolean
 
     constructor(gameParent: GridworldGame, tileSize: number, mapName: string = null, map: GridMap = null) {
         super({
@@ -156,15 +156,22 @@ export class GridworldScene extends Phaser.Scene {
 
     set interactive(value: boolean) {
         this._interactive = value
+        this.keysSprite.setVisible(this._interactive)
+        this.waitBox.setVisible(this._interactive)
+        this.waitBar.setVisible(this._interactive)
+
+        delete this.waitTimeout
+        this.waitBar.clear()
+        this.waitBar.fillStyle(0xeeeeee, 1.0)
+
     }
 
     preload() {
-        this.interactive = this._interactive
         // TODO(nickswalker): Fix handling of the hardcoded terrain case
         this.load.tilemapTiledJSON('map', this.gameParent.assetsPath + '/' + this.mapName + '.json');
         this.load.image('interior_tiles', this.gameParent.assetsPath + 'interior_tiles.png');
         this.load.image('agent', this.gameParent.assetsPath + 'roomba.png');
-        this._trailGraphics = this.scene.scene.add.graphics()
+        this.load.spritesheet("keys", this.gameParent.assetsPath + "keys_all.png", {frameWidth: 94, frameHeight: 58})
     }
 
     create(data: object) {
@@ -172,8 +179,25 @@ export class GridworldScene extends Phaser.Scene {
         this.spacebar = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
         this.sceneSprite = {};
         this.drawLevel();
+        this.prevState = null
         this.currentState = this.mdp.getStartState()
         this._drawState(this.currentState, this.sceneSprite);
+        this.keysSprite = this.add.sprite(60, 60, "keys", 0)
+        this.keysSprite.setVisible(false)
+
+        this.waitBox = this.add.graphics();
+        this.waitBox.fillStyle(0x222222, 0.9);
+        this.waitBox.fillRect(15, 90, 90, 20)
+        this.waitBox.setVisible(false)
+
+        this.waitBar = this.add.graphics();
+        this.waitBar.fillStyle(0xeeeeee, 1.0)
+        this.waitBar.setVisible(false)
+        this.interactionFinished = false
+        this.interactionStarted = false
+
+        this._trailGraphics = this.add.graphics()
+        this._trailGraphics.setDepth(1)
     }
 
     drawLevel() {
@@ -239,7 +263,7 @@ export class GridworldScene extends Phaser.Scene {
         //graphics.generateTexture("trajectory")
     }
 
-    _drawRotation(rotation: number[], sprites: SpriteMap) {
+    _drawRotation(rotation: number[], sprites: SpriteMap, animated: boolean = true) {
         let angle = 0
         if (rotation[0] == -1) {
             angle = -90
@@ -250,14 +274,18 @@ export class GridworldScene extends Phaser.Scene {
         } else if (rotation[1] == 1) {
             angle = 180
         }
-        this.tweens.add({
-            targets: sprites["agents"][0],
-            angle: angle,
-            duration: this.ANIMATION_DURATION,
-            onComplete: (tween, target, player) => {
-                target[0].setAngle(angle);
-            }
-        })
+        if (animated) {
+            this.tweens.add({
+                targets: sprites["agents"][0],
+                angle: angle,
+                duration: this.ANIMATION_DURATION,
+                onComplete: (tween, target, player) => {
+                    target[0].setAngle(angle);
+                }
+            })
+        } else {
+            sprites["agents"][0].setAngle(angle)
+        }
     }
 
     _drawState(state: GridworldState, sprites: SpriteMap, animated: boolean = true) {
@@ -266,14 +294,17 @@ export class GridworldScene extends Phaser.Scene {
         //this.tweens.killAll()
         const tS = this.tileSize;
         const hS = this.tileSize * 0.5;
+        const qS = hS * 0.5;
+        const hqS = qS * 0.5;
         sprites = sprites ?? {}
         sprites["agents"] = sprites["agents"] ?? {}
         for (let p = 0; p < state.agentPositions.length; p++) {
             const agentPosition = state.agentPositions[p]
             // Flip Y to make lower-left the origin
-            let [drawX, drawY] = [agentPosition.x, agentPosition.y]
+            let [gridX, gridY] = [agentPosition.x, agentPosition.y]
+            let [drawX, drawY] = [tS * gridX + hS, tS * gridY + hS]
             if (typeof (sprites['agents'][p]) === 'undefined') {
-                const agent = this.add.sprite(tS * drawX + hS, tS * drawY + hS, "agent");
+                const agent = this.add.sprite(tS * gridX + hS, tS * gridY + hS, "agent");
                 agent.setDisplaySize(tS, tS)
                 agent.setOrigin(0.5)
                 agent.setDepth(2)
@@ -282,6 +313,19 @@ export class GridworldScene extends Phaser.Scene {
                 const agent = sprites['agents'][p]
                 const currentX = agent.x
                 const currentY = agent.y
+                const diffX = drawX - currentX
+                const diffY = drawY - currentY
+                const diffXS = diffX < 0 ? -1 : 1
+                const diffYS = diffY < 0 ? -1 : 1
+                let width = diffXS * Math.max(Math.abs(diffX), qS)
+                let height = diffYS * Math.max(Math.abs(diffY), qS)
+
+                if (animated) {
+
+                    // Always fill square right underneath agent
+                    this._trailGraphics.fillRect(agent.x - hqS, agent.y - hqS, qS, qS)
+                    this._trailGraphics.fillRect(agent.x - hqS, agent.y - hqS, width, height)
+                }
                 if (animated) {
                     /*const trail = this.add.sprite(currentX + hS, currentY + hS, "dot")
                     trail.setDisplaySize(tS, tS)
@@ -298,36 +342,53 @@ export class GridworldScene extends Phaser.Scene {
                     })*/
                     this.tweens.add({
                         targets: agent,
-                        x: tS * drawX + hS,
-                        y: tS * drawY + hS,
+                        x: drawX,
+                        y: drawY,
                         duration: this.ANIMATION_DURATION,
                         onComplete: (tween, target, player) => {
-                            target[0].setPosition(tS * drawX + hS, tS * drawY + hS);
+                            target[0].setPosition(tS * gridX + hS, tS * gridY + hS);
                         }
                     })
                 } else {
-                    agent.setPosition(tS * drawX + hS, tS * drawY + hS);
+                    agent.setPosition(tS * gridX + hS, tS * gridY + hS);
                 }
             }
 
         }
+
+
         this.events.emit("stateDrawn")
     }
 
     clearTrail() {
         this._trailGraphics.clear()
         this._trailGraphics.fillStyle(0xa9cc29)
-        this._trailGraphics.setDepth(-1)
+    }
+
+    reset() {
+        this.clearTrail()
+        this.prevState = null
+        this.currentState = this.mdp.getStartState()
+        this._drawRotation([1, 0], this.sceneSprite, false)
+        this._drawState(this.currentState, this.sceneSprite, false)
+        this.interactionFinished = false
+        this.interactionStarted = false
+
+        delete this.waitTimeout
+        this.waitBar.clear()
+        this.waitBar.fillStyle(0xeeeeee, 1.0)
+
+        this.keysSprite.setFrame(0)
+        this.keysSprite.setAlpha(1.0)
+        this.waitBar.setAlpha(1.0)
     }
 
     update(time: number, delta: number) {
-        const agent = this.sceneSprite["agents"][0]
-        if (this.tweens.isTweening(agent)) {
-            const hT = .5 * this.tileSize
-            this._trailGraphics.fillStyle(0xa9cc29)
-            this._trailGraphics.setDepth(1)
-            this._trailGraphics.fillRect(agent.x - .25 * hT, agent.y - .25 * hT, .5 * hT, .5 * hT)
+        if (this.interactionFinished) {
+            return
         }
+        const agent = this.sceneSprite["agents"][0]
+
         //console.log(this.scene.isPaused())
         // Blackout user controls for a bit while we animate the current step
         if (this.inputDelayTimeout && this.inputDelayTimeout.getOverallProgress() == 1.0) {
@@ -336,27 +397,74 @@ export class GridworldScene extends Phaser.Scene {
         const acceptingInput = this.inputDelayTimeout == null
         if (this._interactive && acceptingInput) {
             let action: Actions = null
+            let keyed = true
             if (this.cursors.left.isDown) {
                 action = Actions.WEST
+                this.gameParent._rotationToDraw = [-1, 0]
+                this.keysSprite.setFrame(4)
             } else if (this.cursors.right.isDown) {
                 action = Actions.EAST
+                this.gameParent._rotationToDraw = [1, 0]
+                this.keysSprite.setFrame(2)
             } else if (this.cursors.up.isDown) {
                 action = Actions.NORTH
+                this.gameParent._rotationToDraw = [0, -1]
+                this.keysSprite.setFrame(1)
             } else if (this.cursors.down.isDown) {
                 action = Actions.SOUTH
+                this.gameParent._rotationToDraw = [0, 1]
+                this.keysSprite.setFrame(3)
             } else if (this.spacebar.isDown) {
                 action = Actions.NONE
+
+            } else {
+                keyed = false
+                // User is idling
+                this.keysSprite.setFrame(0)
+                if (this.waitTimeout) {
+                    if (this.waitTimeout.getOverallProgress() === 1.0) {
+                        this.gameParent._stateToDraw = this.currentState
+                        delete this.waitTimeout
+                        this.waitBar.clear()
+                        this.waitBar.fillStyle(0xeeeeee, 1.0)
+                    }
+
+                }
+                if (!this.waitTimeout && this.interactionStarted) {
+                    this.waitTimeout = this.time.addEvent({delay: 2500})
+                }
+                if (this.waitTimeout) {
+                    this.waitBar.fillRect(15, 90, 90 * this.waitTimeout.getOverallProgress(), 15);
+                }
+
+            }
+            if (keyed) {
+                delete this.waitTimeout
+                this.waitBar.clear()
+                this.waitBar.fillStyle(0xeeeeee, 1.0)
+                this.interactionStarted = true
             }
             if (action !== null) {
-                this.gameParent.setAction(0, action)
+                this.gameParent._stateToDraw = this.mdp.transition(this.currentState, action);
+                if (action !== Actions.NONE && this.gameParent._stateToDraw.equals(this.currentState)) {
+                    delete this.gameParent._rotationToDraw
+                    delete this.gameParent._stateToDraw
+                }
                 this.inputDelayTimeout = this.time.addEvent({delay: 250})
             }
         }
         if (this.gameParent._stateToDraw) {
             let state = this.gameParent._stateToDraw;
             delete this.gameParent._stateToDraw;
+            this.prevState = this.currentState
             this.currentState = state
             this._drawState(state, this.sceneSprite, this.gameParent._animated);
+            if (this.interactionStarted && this.currentState.equals(this.mdp.getTerminalState())) {
+                this.interactionFinished = true
+                this.keysSprite.setFrame(0)
+                this.keysSprite.setAlpha(0.3)
+                this.waitBar.setAlpha(0.3)
+            }
 
         }
         if (this.gameParent._rotationToDraw) {

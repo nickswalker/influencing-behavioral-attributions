@@ -39,22 +39,20 @@ export class GridworldTrajectoryDisplay extends GridworldTrajectoryPlayer {
         }
         this.trajectory = textToStates(this.getAttribute("trajectory"))
 
-        let stepwise = this.getAttribute("stepwise") !== "false";
-        this.game = new GridworldGame(this.gameContainer, 32, "assets/", this.getAttribute("map-name"),terrain, false)
+        this.game = new GridworldGame(this.gameContainer, 32, "assets/", this.getAttribute("map-name"),terrain)
         this.game.scene.stepwise = false
 
         this.playButton.style.display = "none";
         this.game.displayTrajectory = this.trajectory
 
         this.game.sceneCreatedDelegate = () => {
-            var image = new Image();
-            image.src = this.game.container.getElementsByTagName("canvas")[0].toDataURL("image/png");
-            this.game?.close()
-            const imageElement = document.createElement("img")
-            imageElement.src = image.src
-            this.gameContainer.appendChild(imageElement);
-            // Clear out any manual styling from Phaser
-            this.gameContainer.setAttribute("style", "")
+            this.game.game.renderer.snapshot((image: HTMLImageElement) =>{
+                this.game?.close()
+                this.gameContainer.appendChild(image);
+                // Clear out any manual styling from Phaser
+                this.gameContainer.setAttribute("style", "")
+            });
+
         }
         this.game.init();
 

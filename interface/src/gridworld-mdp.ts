@@ -1,5 +1,3 @@
-
-
 export type Position = { x: number, y: number }
 
 export enum Actions {
@@ -12,7 +10,7 @@ export enum Actions {
 
 let [n, s, e, w] = [Actions.NORTH, Actions.SOUTH, Actions.EAST, Actions.WEST];
 
-const transition = new Map([[Actions.NONE, [0,0]], [Actions.NORTH, [0, -1]], [Actions.SOUTH, [0, 1]], [Actions.EAST, [1, 0]], [Actions.WEST, [-1, 0]]])
+const transition = new Map([[Actions.NONE, [0, 0]], [Actions.NORTH, [0, -1]], [Actions.SOUTH, [0, 1]], [Actions.EAST, [1, 0]], [Actions.WEST, [-1, 0]]])
 
 export class GridworldState {
     agentPositions: Position[]
@@ -24,6 +22,10 @@ export class GridworldState {
     deepcopy() {
         const clonedPositions = JSON.parse(JSON.stringify(this.agentPositions));
         return new GridworldState(clonedPositions)
+    }
+
+    equals(other: GridworldState) {
+        return this.agentPositions[0].x == other.agentPositions[0].x && this.agentPositions[0].y == other.agentPositions[0].y
     }
 
 }
@@ -48,21 +50,32 @@ export const characterToTerrainType: { [key: string]: TerrainType } = {
 
 export type TerrainMap = TerrainType[][]
 
-export type GridMap = {terrain: TerrainMap, playerPositions: { [key: number]: Position }}
+export type GridMap = { terrain: TerrainMap, playerPositions: { [key: number]: Position } }
 
 export class Gridworld {
     terrain: TerrainMap
     height: number
     width: number
+    private startState: GridworldState
+    private terminalState: GridworldState
 
-    constructor(terrain: TerrainMap) {
+    constructor(terrain: TerrainMap, startState = new GridworldState([{
+        x: 10,
+        y: 9
+    }]), terminalState = new GridworldState([{x: 10, y: 9}])) {
         this.terrain = terrain
         this.width = this.terrain[0].length
         this.height = this.terrain.length
+        this.startState = startState
+        this.terminalState = terminalState
     }
 
     getStartState() {
-        return new GridworldState([{x: 10, y: 9}])
+        return this.startState.deepcopy()
+    }
+
+    getTerminalState() {
+        return this.terminalState.deepcopy()
     }
 
     transition(state: GridworldState, action: Actions): GridworldState {
