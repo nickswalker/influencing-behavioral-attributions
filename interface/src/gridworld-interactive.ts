@@ -1,6 +1,7 @@
 import {GridMap, GridworldState, TerrainMap} from "./gridworld-mdp";
 import {GridworldGame} from "./gridworld-game";
 import {statesToText, textToStates, textToTerrain} from "./utils";
+import {GridworldTrajectoryPlayer} from "./gridworld-trajectory-player";
 
 
 export class GridworldInteractive extends HTMLElement {
@@ -12,11 +13,16 @@ export class GridworldInteractive extends HTMLElement {
     protected gameContainer: HTMLElement
     protected chunks: Blob[]
     protected enabled: boolean
-
+    protected playbackElement: any
+    protected playButton: HTMLButtonElement
     constructor() {
         super();
         this.shadow = this.attachShadow({mode: 'open'});
 
+    }
+
+    get playbackVisible(): boolean {
+        return this.playbackElement.style.display !== "none"
     }
 
     attributeChangedCallback(name: string, oldValue: string, newValue: string) {
@@ -50,6 +56,16 @@ export class GridworldInteractive extends HTMLElement {
         //this.gameContainer.style.height = "100%"
         //this.gameContainer.style.backgroundColor = "grey"
         this.shadow.appendChild(this.gameContainer)
+
+        const playback: any = document.createElement("gridworld-player")
+        playback.setAttribute("map-name", this.getAttribute("map-name"))
+        playback.setAttribute("trajectory", "[]")
+
+        this.shadow.append(playback)
+
+        playback.style.display = "none"
+        this.playbackElement = playback
+
         const resetButton = document.createElement("button")
         resetButton.value = "reset"
         resetButton.innerText = "Reset"
@@ -57,6 +73,17 @@ export class GridworldInteractive extends HTMLElement {
             this.reset()
         })
         this.shadow.appendChild(resetButton)
+
+        const playbackButton = document.createElement("button")
+        playbackButton.value = "play"
+        playbackButton.innerText = "Play"
+        playbackButton.addEventListener("click", () => {
+            this.playback()
+        })
+        playbackButton.disabled = true
+        this.playButton = playbackButton
+        this.shadow.appendChild(playbackButton)
+
 
     }
 
@@ -76,24 +103,30 @@ export class GridworldInteractive extends HTMLElement {
             mapName = this.getAttribute("map-name")
         }
         this.game = new GridworldGame(this.gameContainer, 32, "assets/", mapName, terrain)
+
         this.trajectory = []
         this.game.init();
         this.game.sceneCreatedDelegate = () => {
-            this.game.scene.clearTrail()
+            this.game.scene.interactive = true
+            this.game.scene.reset()
             this.game.scene.events.addListener("stateDrawn", () => {
-                this.setAttribute("trajectory", statesToText(this.trajectory))
                 this.trajectory.push(this.game.scene.currentState)
+                this.setAttribute("trajectory", statesToText(this.trajectory))
+                this.game.scene.events.once("render", ()=> {
+                    if (this.game.scene.interactionFinished) {
+                        this.classList.add("finished")
+                        this.playButton.disabled = false
+                    } else {
+                        this.classList.remove("finished")
+                        this.playButton.disabled = true
+                    }
+                })
+                this.dispatchEvent(new Event("trajectoryChange",{bubbles:true}))
+
             })
             this.disable()
-            this.game.scene.scene.resume()
-            this.game.game.events.addListener(Phaser.Core.Events.FOCUS, () => {
-
-            })
-            this.game.game.events.addListener(Phaser.Core.Events.BLUR, () => {
-
-            })
         }
-        this.addEventListener("click", (event) => {
+        this.gameContainer.addEventListener("click", (event) => {
             document.querySelectorAll<GridworldInteractive>("gridworld-interactive").forEach((element) => {
                 if (element === this) {
                     return;
@@ -107,13 +140,16 @@ export class GridworldInteractive extends HTMLElement {
 
 
     reset() {
+        this.playbackElement.style.display = "none"
+        this.gameContainer.querySelector("canvas").hidden = false
         this.trajectory = [];
         this.removeAttribute("trajectory")
         this.game.scene.reset()
+        this.enable()
 
     }
 
-    disable() {
+    disable(done: () => void = null) {
         if (!this.enabled) {
             return
         }
@@ -124,13 +160,15 @@ export class GridworldInteractive extends HTMLElement {
         this.game.game.renderer.snapshot((image: HTMLImageElement) => {
             this.game.scene.scene.sleep()
             this.game.scene.interactive = false;
-            this.game.game.input.enabled = false;
-            this.game.game.input.keyboard.preventDefault = false;
+
             this.gameContainer.querySelector("canvas").hidden = true
             image.style.opacity = "0.7"
             this.gameContainer.appendChild(image);
             // Clear out any manual styling from Phaser
             this.gameContainer.setAttribute("style", "")
+            if (done) {
+                done()
+            }
         });
 
     }
@@ -141,20 +179,58 @@ export class GridworldInteractive extends HTMLElement {
         }
         this.enabled = true
         this.game.scene.interactive = true;
-        this.game.game.input.enabled = true;
-        this.game.game.input.keyboard.preventDefault = true;
+
         this.game.scene.scene.wake()
-        //this.game.game.loop.wake()
         this.gameContainer.querySelectorAll("img").forEach((element) => {
             element.remove()
         })
         this.gameContainer.querySelector("canvas").hidden = false
     }
 
+    playback() {
+        if (!this.game.scene.interactionFinished) {
+            return
+        }
+        this.playbackElement.playButton.hidden = true
+        const playbackClickHandler = () => {
+            this.playbackElement.play();
+            this.playbackElement.removeEventListener("ready", playbackClickHandler)
+        }
+        if (this.enabled) {
+            this.disable(() => {
+                this.gameContainer.querySelectorAll("img").forEach((element) => {
+                    element.remove()
+                })
+                this.playbackElement.style.display = ""
+                this.playbackElement.addEventListener("ready", playbackClickHandler)
+                this.playbackElement.setAttribute("trajectory", this.getAttribute("trajectory"))
+
+            })
+        }
+        else {
+            if (!this.playbackVisible) {
+                this.gameContainer.querySelectorAll("img").forEach((element) => {
+                    element.remove()
+                })
+                this.playbackElement.style.display = ""
+                this.playbackElement.addEventListener("ready", playbackClickHandler)
+                this.playbackElement.setAttribute("trajectory", this.getAttribute("trajectory"))
+            } else {
+                this.playbackElement.reset(()=>(this.playbackElement.play()))
+            }
+
+        }
+
+
+    }
+
 }
 
 document.addEventListener("click", (event: MouseEvent) => {
     document.querySelectorAll<GridworldInteractive>("gridworld-interactive").forEach((element) => {
+        if (event.target === element) {
+            return;
+        }
         element.disable()
     })
 })

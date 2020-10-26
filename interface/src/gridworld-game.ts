@@ -164,6 +164,14 @@ export class GridworldScene extends Phaser.Scene {
         this.waitBar.clear()
         this.waitBar.fillStyle(0xeeeeee, 1.0)
 
+        // This'll cause problems if you're running multiple scenes
+        if (value){
+            this.gameParent.game.input.keyboard.startListeners()
+        } else {
+            this.gameParent.game.input.keyboard.stopListeners()
+        }
+
+
     }
 
     preload() {
@@ -171,33 +179,36 @@ export class GridworldScene extends Phaser.Scene {
         this.load.tilemapTiledJSON('map', this.gameParent.assetsPath + '/' + this.mapName + '.json');
         this.load.image('interior_tiles', this.gameParent.assetsPath + 'interior_tiles.png');
         this.load.image('agent', this.gameParent.assetsPath + 'roomba.png');
+        this.load.image('dot', this.gameParent.assetsPath + 'dot.png');
+        this.load.image('x', this.gameParent.assetsPath + 'x.png');
         this.load.spritesheet("keys", this.gameParent.assetsPath + "keys_all.png", {frameWidth: 94, frameHeight: 58})
     }
 
     create(data: object) {
         this.cursors = this.input.keyboard.createCursorKeys();
         this.spacebar = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
-        this.sceneSprite = {};
-        this.drawLevel();
-        this.prevState = null
-        this.currentState = this.mdp.getStartState()
-        this._drawState(this.currentState, this.sceneSprite);
-        this.keysSprite = this.add.sprite(60, 60, "keys", 0)
-        this.keysSprite.setVisible(false)
+        this.sceneSprite = {'agents': []};
+        const agent = this.add.sprite(0,0, "agent");
+        agent.setDisplaySize(this.tileSize, this.tileSize)
+        agent.setOrigin(0.5)
+        agent.setDepth(2)
+        this.sceneSprite['agents'][0] = agent;
 
-        this.waitBox = this.add.graphics();
+        this.keysSprite = this.add.sprite(60, 60, "keys", 0)
+        this.keysSprite.setDepth(1)
+        this.waitBox = this.add.graphics()
+        this.waitBox.setDepth(1)
         this.waitBox.fillStyle(0x222222, 0.9);
         this.waitBox.fillRect(15, 90, 90, 20)
-        this.waitBox.setVisible(false)
-
         this.waitBar = this.add.graphics();
-        this.waitBar.fillStyle(0xeeeeee, 1.0)
-        this.waitBar.setVisible(false)
-        this.interactionFinished = false
-        this.interactionStarted = false
+        this.waitBar.setDepth(2)
 
         this._trailGraphics = this.add.graphics()
         this._trailGraphics.setDepth(1)
+
+        this.drawLevel();
+        this.reset()
+        this._drawState(this.currentState, this.sceneSprite);
     }
 
     drawLevel() {
@@ -211,10 +222,21 @@ export class GridworldScene extends Phaser.Scene {
         const deco1 = map.createStaticLayer('deco1', tileset, 0, 0);
         const deco2 = map.createStaticLayer('deco2', tileset, 0, 0);
         const roof = map.createStaticLayer('roof', tileset, 0, 0);
-        if (map.getLayer("goal")) {
+        if (map.getLayer("goal") && map.getLayer("goal").visible) {
             const goal = map.createStaticLayer('goal', tileset, 0, 0)
         }
-        const collision = map.getLayer("collision")
+        if (map.getLayer("start")) {
+            const flatData = map.getLayer("start").data.reduce((acc, val) => acc.concat(val), []);
+            const startMarkers = flatData.filter((x)=>(x.index !== -1))
+            startMarkers.forEach((tile)=> {
+                const start = this.add.sprite(tile.x * this.tileSize, tile.y * this.tileSize, "x")
+                start.setAlpha(0.7)
+                start.setOrigin(0)
+                start.setDisplaySize(this.tileSize, this.tileSize)
+                start.setDepth(1)
+            })
+
+        }
         const terrainMap = [...Array(map.height)].map(e => Array(map.width));
         for (let x = 0; x < map.width; x++) {
             for (let y = 0; y < map.height; y++) {
@@ -303,56 +325,51 @@ export class GridworldScene extends Phaser.Scene {
             // Flip Y to make lower-left the origin
             let [gridX, gridY] = [agentPosition.x, agentPosition.y]
             let [drawX, drawY] = [tS * gridX + hS, tS * gridY + hS]
-            if (typeof (sprites['agents'][p]) === 'undefined') {
-                const agent = this.add.sprite(tS * gridX + hS, tS * gridY + hS, "agent");
-                agent.setDisplaySize(tS, tS)
-                agent.setOrigin(0.5)
-                agent.setDepth(2)
-                sprites['agents'][p] = agent;
-            } else {
-                const agent = sprites['agents'][p]
-                const currentX = agent.x
-                const currentY = agent.y
-                const diffX = drawX - currentX
-                const diffY = drawY - currentY
-                const diffXS = diffX < 0 ? -1 : 1
-                const diffYS = diffY < 0 ? -1 : 1
-                let width = diffXS * Math.max(Math.abs(diffX), qS)
-                let height = diffYS * Math.max(Math.abs(diffY), qS)
 
-                if (animated) {
+            const agent = sprites['agents'][p]
+            const currentX = agent.x
+            const currentY = agent.y
+            const diffX = drawX - currentX
+            const diffY = drawY - currentY
+            const diffXS = diffX < 0 ? -1 : 1
+            const diffYS = diffY < 0 ? -1 : 1
+            let width = diffXS * Math.max(Math.abs(diffX), qS)
+            let height = diffYS * Math.max(Math.abs(diffY), qS)
 
-                    // Always fill square right underneath agent
-                    this._trailGraphics.fillRect(agent.x - hqS, agent.y - hqS, qS, qS)
-                    this._trailGraphics.fillRect(agent.x - hqS, agent.y - hqS, width, height)
-                }
-                if (animated) {
-                    /*const trail = this.add.sprite(currentX + hS, currentY + hS, "dot")
+            if (animated) {
+                if (this._interactive && this.prevState && state.equals(this.prevState)) {
+                    const trail = this.add.sprite(currentX, currentY, "dot")
                     trail.setDisplaySize(tS, tS)
-                    agent.setOrigin(0)
-                    agent.setDepth(2)
+                    trail.setDepth(2)
                     this.tweens.add({
                         targets: trail,
-                        opacity: 0,
-                        ease: "Expo.easeOut",
-                        duration: this.ANIMATION_DURATION * 400,
+                        alpha: 0,
+                        scale: 0,
+                        ease: "Expo.easeIn",
+                        duration: this.ANIMATION_DURATION * 12,
                         onComplete: (tween, target, player) => {
                             target[0].destroy()
                         }
-                    })*/
-                    this.tweens.add({
-                        targets: agent,
-                        x: drawX,
-                        y: drawY,
-                        duration: this.ANIMATION_DURATION,
-                        onComplete: (tween, target, player) => {
-                            target[0].setPosition(tS * gridX + hS, tS * gridY + hS);
-                        }
                     })
-                } else {
-                    agent.setPosition(tS * gridX + hS, tS * gridY + hS);
                 }
+                // Always fill square right underneath agent
+                this._trailGraphics.fillRect(agent.x - hqS, agent.y - hqS, qS, qS)
+                this._trailGraphics.fillRect(agent.x - hqS, agent.y - hqS, width, height)
             }
+            if (animated) {
+                this.tweens.add({
+                    targets: agent,
+                    x: drawX,
+                    y: drawY,
+                    duration: this.ANIMATION_DURATION,
+                    onComplete: (tween, target, player) => {
+                        target[0].setPosition(tS * gridX + hS, tS * gridY + hS);
+                    }
+                })
+            } else {
+                agent.setPosition(tS * gridX + hS, tS * gridY + hS);
+            }
+
 
         }
 
@@ -369,7 +386,7 @@ export class GridworldScene extends Phaser.Scene {
         this.clearTrail()
         this.prevState = null
         this.currentState = this.mdp.getStartState()
-        this._drawRotation([1, 0], this.sceneSprite, false)
+        this._drawRotation([0 ,-1], this.sceneSprite, false)
         this._drawState(this.currentState, this.sceneSprite, false)
         this.interactionFinished = false
         this.interactionStarted = false
@@ -381,6 +398,8 @@ export class GridworldScene extends Phaser.Scene {
         this.keysSprite.setFrame(0)
         this.keysSprite.setAlpha(1.0)
         this.waitBar.setAlpha(1.0)
+
+        this.interactive = this._interactive
     }
 
     update(time: number, delta: number) {
@@ -431,7 +450,7 @@ export class GridworldScene extends Phaser.Scene {
 
                 }
                 if (!this.waitTimeout && this.interactionStarted) {
-                    this.waitTimeout = this.time.addEvent({delay: 2500})
+                    this.waitTimeout = this.time.addEvent({delay: 1000})
                 }
                 if (this.waitTimeout) {
                     this.waitBar.fillRect(15, 90, 90 * this.waitTimeout.getOverallProgress(), 15);

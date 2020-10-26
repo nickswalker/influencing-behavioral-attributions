@@ -71,10 +71,8 @@ declare class MediaRecorder extends EventTarget {
 export class GridworldTrajectoryPlayer extends HTMLElement {
     protected game: GridworldGame;
     protected trajectory: GridworldState[];
-    protected currentState: any
     protected currentIndex: number
     protected intervalId: number;
-    protected state: GridworldState
     protected shadow: ShadowRoot
     protected gameContainer: HTMLElement
     protected playButton: HTMLElement
@@ -118,25 +116,22 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
     }
 
     buildSkeleton() {
-        this.style.display = "block"
         let playButton = document.createElement("button")
         playButton.innerText = "Play"
         playButton.classList.add("play")
         this.shadow.appendChild(playButton)
-        playButton.onclick = () => {
-            this.play()
-        }
+        playButton.onclick = () => {this.playClickHandler()}
         this.playButton = playButton
         this.gameContainer = document.createElement("div")
         this.gameContainer.style.width = "100%"
         this.gameContainer.style.height = "100%"
-        //this.gameContainer.style.backgroundColor = "grey"
         this.shadow.appendChild(this.gameContainer)
     }
 
     buildGame() {
         // Clean out any previous running game
         this.game?.close()
+        this.currentIndex = 0;
         this.trajHash = hashCode(this.getAttribute("trajectory"))
         let terrain: GridMap = null
         if (this.getAttribute("terrain")) {
@@ -157,8 +152,16 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
 
         this.game = new GridworldGame( this.gameContainer, 32, "assets/", this.getAttribute("map-name"),terrain)
         this.game.init();
-        this.game.game.events.once("postrender", () =>{
-            this.game.scene.scene.pause()
+        this.game.sceneCreatedDelegate = () => {
+            this.freezeFrame(() => {
+                this.dispatchEvent(new Event("ready"))
+            })
+
+        }
+
+        this.addEventListener("click", (event)=>{
+            event.stopPropagation()
+            this.playClickHandler()
         })
     }
 
@@ -178,10 +181,25 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
 
     }
 
-    play() {
-        this.reset()
-        this.game.scene.scene.resume()
+    playClickHandler() {
+        if (this.intervalId && this.intervalId !== -1) {
+            this.reset()
+        } else {
+            this.currentIndex = 0
+            this.play()
+        }
+    }
 
+    play() {
+        if (this.intervalId) {
+            return;
+        }
+        this.intervalId = -1
+        this.gameContainer.querySelectorAll("img").forEach((element) => {
+            element.remove()
+        })
+        this.gameContainer.querySelector("canvas").hidden = false
+        this.game.scene.scene.wake()
         this.recorder?.start();
 
         setTimeout(() => {
@@ -212,8 +230,8 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
             // to allow the tween to finish
             clearInterval(this.intervalId)
             this.intervalId = null
-            this.game.scene.scene.pause()
             this.recorder?.stop()
+            this.freezeFrame()
             return;
         }
         const diff = this.diffs[this.currentIndex]
@@ -227,19 +245,34 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
         }
         const statei = this.trajectory[this.currentIndex];
         this.game.drawState(statei);
-        this.state = statei;
         this.currentIndex += 1;
 
     }
 
-    reset() {
+    reset(done: ()=>void = null) {
         if (this.intervalId !== null) {
             clearInterval(this.intervalId)
+            this.intervalId = null
         }
         this.currentIndex = 0;
-        this.state = this.trajectory[0];
-        this.game.drawState(this.state, false);
-        this.game.scene.clearTrail()
+        this.game.drawState(this.trajectory[0], false);
+        this.game.scene.reset()
+        this.freezeFrame(done)
+    }
+
+    freezeFrame(done: ()=>void = null) {
+        this.game.game.renderer.snapshot((image: HTMLImageElement) => {
+            this.game.scene.scene.sleep()
+            this.gameContainer.querySelectorAll("img").forEach((element) => {
+                element.remove()
+            })
+            this.gameContainer.querySelector("canvas").hidden = true
+            image.style.opacity = "0.7"
+            this.gameContainer.appendChild(image);
+            // Clear out any manual styling from Phaser
+            this.gameContainer.setAttribute("style", "")
+            if (done) {done()}
+        });
     }
 
 
