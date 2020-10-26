@@ -1,6 +1,4 @@
 var current = 1; //the current page
-var moved: number[] = []; //pages which have been moved by the randomization
-var movedto: number[] = [];
 let numPages = 0;
 let pagesContainer: HTMLElement = null;
 let pageNumber: HTMLElement = null;
@@ -24,16 +22,6 @@ export function setUpPages(container: HTMLElement, nextValidator: (arg0: HTMLEle
     numPages = pages.length
 }
 
-//takes randomization into account
-function effectivePage(pagenum: number) {
-    let index = moved.indexOf(pagenum);
-    if (index === -1) {
-        return pagenum;
-    } else {
-        return movedto[index];
-    }
-}
-
 //make one vanish and the other appear
 function swap(vanish: number, appear: number) {
     (<HTMLElement>pagesContainer.querySelector("#p" + vanish)).style.display = "none";
@@ -53,6 +41,7 @@ function next() {
     current++;
     pageNumber.innerText = (current + 1).toString();
     swap(current - 1, current);
+    window.scrollTo(0, 0);
 }
 
 function back() {
@@ -62,6 +51,7 @@ function back() {
     current--;
     pageNumber.innerText = (current + 1).toString();
     swap(current + 1, current);
+    window.scrollTo(0, 0);
 }
 
 declare global {

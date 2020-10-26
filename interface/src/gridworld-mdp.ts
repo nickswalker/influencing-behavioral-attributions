@@ -1,17 +1,16 @@
-import RuntimeError = WebAssembly.RuntimeError;
-
 export type Position = { x: number, y: number }
 
-export enum Direction {
+export enum Actions {
+    NONE,
     EAST,
     NORTH,
     WEST,
     SOUTH
 }
 
-let [n, s, e, w] = [Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST];
+let [n, s, e, w] = [Actions.NORTH, Actions.SOUTH, Actions.EAST, Actions.WEST];
 
-const transition = new Map([[Direction.NORTH, [0, 1]], [Direction.SOUTH, [0, -1]], [Direction.EAST, [1, 0]], [Direction.WEST, [-1, 0]]])
+const transition = new Map([[Actions.NONE, [0, 0]], [Actions.NORTH, [0, -1]], [Actions.SOUTH, [0, 1]], [Actions.EAST, [1, 0]], [Actions.WEST, [-1, 0]]])
 
 export class GridworldState {
     agentPositions: Position[]
@@ -23,6 +22,10 @@ export class GridworldState {
     deepcopy() {
         const clonedPositions = JSON.parse(JSON.stringify(this.agentPositions));
         return new GridworldState(clonedPositions)
+    }
+
+    equals(other: GridworldState) {
+        return this.agentPositions[0].x == other.agentPositions[0].x && this.agentPositions[0].y == other.agentPositions[0].y
     }
 
 }
@@ -45,61 +48,37 @@ export const characterToTerrainType: { [key: string]: TerrainType } = {
     "R": TerrainType.Reward,
 }
 
-export function textToStates(states: string) {
-    const trajString = states.replace(/\(/g,'')
-    let trajStates = trajString.split(")").filter((item) => { return item.length > 1}).map((item) => item.split(","))
-    return trajStates.map((value: string[]) => {
-        return new GridworldState([{x: parseInt(value[0]), y: parseInt(value[1])}])
-    })
-}
-
-export function textToTerrain(grid: string[]) {
-    const asChar = grid.map((r) => [...r])
-    let terrain: TerrainMap = []
-    let playerPositions: { [key: number]: Position } = {}
-    for (let y = 0; y < grid.length; y++) {
-        terrain[y] = []
-        for (let x = 0; x < grid[0].length; x++) {
-            let c: string = asChar[y][x]
-            const asNum = parseInt(c)
-            if (typeof (asNum) !== "undefined" && !isNaN(asNum)) {
-                if (playerPositions[asNum]) {
-                    console.error("Duplicate player in grid: " + asNum + " at " + x + ", " + y)
-                    throw new RuntimeError()
-                }
-                playerPositions[asNum] = {x: x, y: y}
-                c = " "
-            }
-            const t = characterToTerrainType[c]
-            if (typeof t == "undefined") {
-                console.error("No terrain type for character: " + c)
-                throw new RuntimeError()
-            }
-            terrain[y].push(t)
-        }
-    }
-
-    return {terrain: terrain, playerPositions: playerPositions}
-}
-
 export type TerrainMap = TerrainType[][]
+
+export type GridMap = { terrain: TerrainMap, playerPositions: { [key: number]: Position } }
 
 export class Gridworld {
     terrain: TerrainMap
     height: number
     width: number
+    private startState: GridworldState
+    private terminalState: GridworldState
 
-    constructor(terrain: TerrainMap) {
+    constructor(terrain: TerrainMap, startState = new GridworldState([{
+        x: 10,
+        y: 9
+    }]), terminalState = new GridworldState([{x: 10, y: 9}])) {
         this.terrain = terrain
         this.width = this.terrain[0].length
         this.height = this.terrain.length
+        this.startState = startState
+        this.terminalState = terminalState
     }
 
     getStartState() {
-        return new GridworldState([{x: 10, y: 9}])
+        return this.startState.deepcopy()
     }
 
-    transition(state: GridworldState, action: Direction): GridworldState {
+    getTerminalState() {
+        return this.terminalState.deepcopy()
+    }
+
+    transition(state: GridworldState, action: Actions): GridworldState {
         const nextState = state.deepcopy();
         const curPosition = nextState.agentPositions[0];
         const [dx, dy] = transition.get(action);
