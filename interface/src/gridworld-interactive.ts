@@ -102,13 +102,12 @@ export class GridworldInteractive extends HTMLElement {
         } else {
             mapName = this.getAttribute("map-name")
         }
-        this.game = new GridworldGame(this.gameContainer, 32, "assets/", mapName, terrain)
-
         this.trajectory = []
         this.game.init();
         this.game.sceneCreatedDelegate = () => {
             this.game.scene.interactive = true
             this.game.scene.reset()
+            this.trajectory = [this.game.scene.currentState]
             this.game.scene.events.addListener("stateDrawn", () => {
                 this.trajectory.push(this.game.scene.currentState)
                 this.setAttribute("trajectory", statesToText(this.trajectory))
@@ -126,6 +125,8 @@ export class GridworldInteractive extends HTMLElement {
             })
             this.disable()
         }
+        this.game.init();
+
         this.gameContainer.addEventListener("click", (event) => {
             document.querySelectorAll<GridworldInteractive>("gridworld-interactive").forEach((element) => {
                 if (element === this) {

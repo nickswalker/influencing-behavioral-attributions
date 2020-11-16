@@ -27,8 +27,8 @@ export class GridworldGame {
     constructor(
         container: HTMLElement,
         tileSize = 32,
-        assetsLoc = "assets/",
-        mapName: string = null,
+        assetsLoc: string,
+        mapName: string,
         terrain: GridMap = null
     ) {
 
@@ -59,8 +59,6 @@ export class GridworldGame {
             },
             callbacks: {
                 postBoot: (game) => {
-                    //game.scene.sleep('Game')
-                    //game.loop.stop()
                     if (this.scene) {
                         this.scene.events.on("create", () => {
                             this.sceneCreated()
@@ -86,10 +84,7 @@ export class GridworldGame {
     }
 
     close() {
-        this.game.renderer.destroy();
-        this.game.loop.stop();
         this.game.destroy(true);
-        this.game.canvas.remove();
     }
 
     sceneCreated() {
@@ -101,8 +96,6 @@ export class GridworldGame {
             if (this.displayTrajectory.length > 0) {
                 this.scene._drawState(this.displayTrajectory[0], this.scene.sceneSprite, false)
             }
-            // Stop calls to update.
-            this.scene.scene.pause()
         }
         // Wait for first draw
         this.scene.events.once("render", () => {
@@ -176,7 +169,7 @@ export class GridworldScene extends Phaser.Scene {
 
     preload() {
         // TODO(nickswalker): Fix handling of the hardcoded terrain case
-        this.load.tilemapTiledJSON('map', this.gameParent.assetsPath + '/' + this.mapName + '.json');
+        this.load.tilemapTiledJSON('map', this.gameParent.assetsPath + this.mapName + '.json');
         this.load.image('interior_tiles', this.gameParent.assetsPath + 'interior_tiles.png');
         this.load.image('agent', this.gameParent.assetsPath + 'roomba.png');
         this.load.image('dot', this.gameParent.assetsPath + 'dot.png');
@@ -268,19 +261,6 @@ export class GridworldScene extends Phaser.Scene {
         }
         const lastPos = trajectory[trajectory.length - 1]
         let [drawX, drawY] = [lastPos.x, lastPos.y - 1]
-        const arrowHead = this.add.sprite(fT * drawX + hT, fT * drawY + hT, "arrows", "filled_head.png")
-        arrowHead.setDisplaySize(fT, fT)
-        arrowHead.setOrigin(.5)
-        const secondLastPos = trajectory[trajectory.length - 2]
-        const delta = [secondLastPos.x - lastPos.x, -1 * (secondLastPos.y - lastPos.y)]
-        if (delta[0] == 1) {
-            arrowHead.rotation = 1.57
-        } else if (delta[1] == -1) {
-            arrowHead.rotation = 3.14
-        } else if (delta[0] == -1) {
-            arrowHead.rotation = 4.71
-        }
-        arrowHead.setDepth(-1)
         path.draw(graphics)
         //graphics.generateTexture("trajectory")
     }
@@ -369,11 +349,7 @@ export class GridworldScene extends Phaser.Scene {
             } else {
                 agent.setPosition(tS * gridX + hS, tS * gridY + hS);
             }
-
-
         }
-
-
         this.events.emit("stateDrawn")
     }
 
