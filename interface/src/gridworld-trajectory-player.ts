@@ -80,7 +80,6 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
     protected diffs: GridworldState[]
     protected recorder: MediaRecorder
     protected chunks: Blob[]
-    protected trajHash: number
 
     constructor() {
         super();
@@ -90,7 +89,7 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
     }
 
     attributeChangedCallback(name: string, oldValue: string, newValue: string) {
-        if (!this.playButton) {
+        if (!this.gameContainer) {
             this.buildSkeleton()
         }
         if (!this.getAttribute("terrain") && !this.getAttribute("map-name")) {
@@ -99,9 +98,9 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
         if ( !this.getAttribute("trajectory")) {
             return;
         }
-        if (!this.game || hashCode(this.getAttribute("trajectory")) !== this.trajHash) {
-            this.buildGame()
-        }
+
+        this.buildGame()
+
 
     }
 
@@ -126,13 +125,21 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
         this.gameContainer.style.width = "100%"
         this.gameContainer.style.height = "100%"
         this.shadow.appendChild(this.gameContainer)
+
+        this.addEventListener("click", (event)=>{
+            event.stopPropagation()
+            this.playClickHandler()
+        })
     }
 
     buildGame() {
         // Clean out any previous running game
         this.game?.close()
         this.currentIndex = 0;
-        this.trajHash = hashCode(this.getAttribute("trajectory"))
+        if (this.intervalId !== null) {
+            clearInterval(this.intervalId)
+            this.intervalId = null
+        }
         let terrain: GridMap = null
         if (this.getAttribute("terrain")) {
             let terrainData = this.getAttribute("terrain").split("'")
@@ -150,7 +157,7 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
             this.diffs.push(new GridworldState([{x: current.x - prev.x, y: current.y - prev.y}]))
         }
 
-        this.game = new GridworldGame( this.gameContainer, 32, "assets/", this.getAttribute("map-name"),terrain)
+        this.game = new GridworldGame( this.gameContainer, 32, null, this.getAttribute("map-name"),terrain)
         this.game.init();
         this.game.sceneCreatedDelegate = () => {
             this.freezeFrame(() => {
@@ -159,10 +166,6 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
 
         }
 
-        this.addEventListener("click", (event)=>{
-            event.stopPropagation()
-            this.playClickHandler()
-        })
     }
 
     configureRecorder() {

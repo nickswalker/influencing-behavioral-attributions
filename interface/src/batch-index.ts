@@ -1,6 +1,7 @@
 import {setUpPages} from "./paged-navigation.js";
 import {shuffleArray} from "./utils.js";
 import "./gridworld-interactive"
+import "./gridworld-trajectory-player"
 
 declare global {
     interface Mustache {
@@ -36,6 +37,16 @@ function render(attributions: string[], trajectoryIds: number[]) {
         demonstrationInsertionContainer.innerHTML += condition;
     }
 
+}
+
+function addDemoListeners(attributions: string[]) {
+    for (let i = 0; i < attributions.length; i++) {
+        const gw: any = document.querySelector("#demo"+String(i))
+        const input = <HTMLInputElement>document.querySelector("input[name=con_"+String(i)+"_traj]")
+        gw.addEventListener("trajectoryChange", (event: any) => {
+            input.value = gw.getAttribute("trajectory")
+        })
+    }
 }
 
 function addVideoListeners() {
@@ -83,6 +94,16 @@ function validateNext(page: HTMLElement) : string {
             return "Please select an answer"
         }
 
+    } else if (page.classList.contains("demonstration-instructions")) {
+        const demoUI = page.querySelector("#instructional");
+        const trajString = demoUI.getAttribute("trajectory") ?? "[]"
+        const traj = JSON.parse(trajString
+            .replace(/\(/g, '[')
+            .replace(/\)/g, ']')
+         )
+        if (!traj.some((point: any) =>{return point[0] >= 19})) {
+            return "Make sure you can navigate the robot into the bedroom before continuing"
+        }
     } else if (page.classList.contains("attribution")) {
         let currentVideo = page.querySelector("video");
         if (currentVideo) {
@@ -110,17 +131,22 @@ function validateNext(page: HTMLElement) : string {
             }
         }
         // Make sure descriptions are actually sentence length
-        let requiredInputs = <any>page.querySelectorAll("crowd-input[name$=describe]")
-        for (let i = 0; i < requiredInputs.length; i++) {
-            let input = requiredInputs[i]
-            if (input.required && input.value.length < 10) {
-                formValid = false;
-            }
-        }
-
+        const missingDescribe = Array.from(page.querySelectorAll<any>("crowd-input[name$=describe]")).filter((x)=>{return x.required && x.value.length < 10})
+        const missingExplain = Array.from(page.querySelectorAll<any>("crowd-input[name$=explain]")).filter((x)=>{return x.required && x.value.length < 10})
+        formValid = formValid && missingDescribe.length === 0 && missingExplain.length === 0
         if (!formValid) {
             return "Please respond to all required questions before continuing";
         }
+    } else if (page.classList.contains("demonstrations")) {
+        let anyUnfinished = page.querySelectorAll(".finished").length < page.querySelectorAll("gridworld-interactive").length
+        if (anyUnfinished) {
+            return "Please demonstrate each style before continuing"
+        }
+        const missingResponses = Array.from(page.querySelectorAll<any>("crowd-input")).filter((x)=>{return x.required && x.value.length < 10})
+        if (missingResponses.length > 0) {
+            return "Please respond to the questions"
+        }
+
     }
     return null
 }
@@ -165,5 +191,6 @@ render(window.attributions,window.trajectoryIds)
 randomizeQuestionOrder()
 Plyr.setup('video', {"displayDuration": false, tooltips: { controls: false, seek: false}, controls: ['play-large', 'play', 'progress']});
 addVideoListeners()
+addDemoListeners(window.attributions)
 nameAllInputs()
 setUpPages(document.getElementById("task"), validateNext)

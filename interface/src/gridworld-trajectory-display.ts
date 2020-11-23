@@ -15,14 +15,16 @@ export class GridworldTrajectoryDisplay extends GridworldTrajectoryPlayer {
     }
 
     connectedCallback() {
-        if (!this.playButton) {
+        if (!this.gameContainer) {
             this.buildSkeleton()
         }
     }
 
     buildSkeleton() {
-        super.buildSkeleton()
-        this.playButton.style.display = "none"
+        this.gameContainer = document.createElement("div")
+        this.gameContainer.style.width = "100%"
+        this.gameContainer.style.height = "100%"
+        this.shadow.appendChild(this.gameContainer)
     }
 
     buildGame() {
@@ -39,10 +41,8 @@ export class GridworldTrajectoryDisplay extends GridworldTrajectoryPlayer {
         }
         this.trajectory = textToStates(this.getAttribute("trajectory"))
 
-        this.game = new GridworldGame(this.gameContainer, 32, "assets/", this.getAttribute("map-name"),terrain)
+        this.game = new GridworldGame(this.gameContainer, 32, null, this.getAttribute("map-name"),terrain)
         this.game.scene.stepwise = false
-
-        this.playButton.style.display = "none";
         this.game.displayTrajectory = this.trajectory
 
         this.game.sceneCreatedDelegate = () => {

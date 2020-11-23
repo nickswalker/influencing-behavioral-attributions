@@ -27,8 +27,8 @@ export class GridworldGame {
     constructor(
         container: HTMLElement,
         tileSize = 32,
-        assetsLoc = "assets/",
-        mapName: string = null,
+        assetsLoc: string,
+        mapName: string,
         terrain: GridMap = null
     ) {
 
@@ -36,6 +36,11 @@ export class GridworldGame {
         this.gameWidth = tileSize * 6
         this.gameHeight = tileSize * 6
 
+        if (assetsLoc === null) {
+            assetsLoc = "assets/"
+            // To make deployment expedient
+            //assetsLoc = "https://mturk.nickwalker.us/attribution/batch/4/assets/"
+        }
         this.assetsPath = assetsLoc;
         this.scene = new GridworldScene(this, tileSize, mapName, terrain)
     }
@@ -59,8 +64,6 @@ export class GridworldGame {
             },
             callbacks: {
                 postBoot: (game) => {
-                    //game.scene.sleep('Game')
-                    //game.loop.stop()
                     if (this.scene) {
                         this.scene.events.on("create", () => {
                             this.sceneCreated()
@@ -86,10 +89,7 @@ export class GridworldGame {
     }
 
     close() {
-        this.game.renderer.destroy();
-        this.game.loop.stop();
         this.game.destroy(true);
-        this.game.canvas.remove();
     }
 
     sceneCreated() {
@@ -101,8 +101,6 @@ export class GridworldGame {
             if (this.displayTrajectory.length > 0) {
                 this.scene._drawState(this.displayTrajectory[0], this.scene.sceneSprite, false)
             }
-            // Stop calls to update.
-            this.scene.scene.pause()
         }
         // Wait for first draw
         this.scene.events.once("render", () => {
@@ -126,6 +124,7 @@ export class GridworldScene extends Phaser.Scene {
     mapName: string
     _interactive: boolean
     _trailGraphics: Phaser.GameObjects.Graphics
+    _speechBubbleGraphics: Phaser.GameObjects.Graphics
     inputDelayTimeout: Phaser.Time.TimerEvent
     waitTimeout: Phaser.Time.TimerEvent
     ANIMATION_DURATION = 50
@@ -156,13 +155,13 @@ export class GridworldScene extends Phaser.Scene {
 
     set interactive(value: boolean) {
         this._interactive = value
-        this.keysSprite.setVisible(this._interactive)
-        this.waitBox.setVisible(this._interactive)
-        this.waitBar.setVisible(this._interactive)
+        this.keysSprite?.setVisible(this._interactive)
+        this.waitBox?.setVisible(this._interactive)
+        this.waitBar?.setVisible(this._interactive)
 
         delete this.waitTimeout
-        this.waitBar.clear()
-        this.waitBar.fillStyle(0xeeeeee, 1.0)
+        this.waitBar?.clear()
+        this.waitBar?.fillStyle(0xeeeeee, 1.0)
 
         // This'll cause problems if you're running multiple scenes
         if (value){
@@ -176,7 +175,7 @@ export class GridworldScene extends Phaser.Scene {
 
     preload() {
         // TODO(nickswalker): Fix handling of the hardcoded terrain case
-        this.load.tilemapTiledJSON('map', this.gameParent.assetsPath + '/' + this.mapName + '.json');
+        this.load.tilemapTiledJSON('map', this.gameParent.assetsPath + this.mapName + '.json');
         this.load.image('interior_tiles', this.gameParent.assetsPath + 'interior_tiles.png');
         this.load.image('agent', this.gameParent.assetsPath + 'roomba.png');
         this.load.image('dot', this.gameParent.assetsPath + 'dot.png');
@@ -185,6 +184,18 @@ export class GridworldScene extends Phaser.Scene {
     }
 
     create(data: object) {
+        const map = this.make.tilemap({key: 'map'});
+        const terrainMap = [...Array(map.height)].map(e => Array(map.width));
+        for (let x = 0; x < map.width; x++) {
+            for (let y = 0; y < map.height; y++) {
+                const tile = map.getTileAt(x, y, false, "collision")
+                if (tile) {
+                    terrainMap[y][x] = TerrainType.Wall;
+                }
+            }
+        }
+        this.map = map
+        this.mdp = new Gridworld(terrainMap)
         this.cursors = this.input.keyboard.createCursorKeys();
         this.spacebar = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
         this.sceneSprite = {'agents': []};
@@ -194,28 +205,36 @@ export class GridworldScene extends Phaser.Scene {
         agent.setDepth(2)
         this.sceneSprite['agents'][0] = agent;
 
-        this.keysSprite = this.add.sprite(60, 60, "keys", 0)
+        this._trailGraphics = this.add.graphics()
+        this._trailGraphics.setDepth(1)
+
+        this._speechBubbleGraphics = this.add.graphics()
+        this._speechBubbleGraphics.setDepth(1)
+
+        this.drawLevel();
+        this.currentState = this.mdp.getStartState()
+
+        this._drawState(this.currentState, this.sceneSprite);
+        this._drawSpeechBubble("Robot, please clean the bedroom")
+
+        const w = this.cameras.main.width
+        const h = this.cameras.main.height
+        this.keysSprite = this.add.sprite(  60,  h - 60, "keys", 0)
         this.keysSprite.setDepth(1)
         this.waitBox = this.add.graphics()
         this.waitBox.setDepth(1)
         this.waitBox.fillStyle(0x222222, 0.9);
-        this.waitBox.fillRect(15, 90, 90, 20)
+        this.waitBox.fillRect(15,  h - 30, 90, 20)
         this.waitBar = this.add.graphics();
         this.waitBar.setDepth(2)
 
-        this._trailGraphics = this.add.graphics()
-        this._trailGraphics.setDepth(1)
-
-        this.drawLevel();
         this.reset()
-        this._drawState(this.currentState, this.sceneSprite);
     }
 
     drawLevel() {
-        const map = this.make.tilemap({key: 'map'});
+        const map = this.map
         this.game.scale.resize(map.width * map.tileWidth, map.height * map.tileHeight)
         const tileset = map.addTilesetImage('interior_tiles', 'interior_tiles');
-
 
         const ground = map.createStaticLayer('ground_walls', tileset, 0, 0);
         const deco0 = map.createStaticLayer('deco0', tileset, 0, 0);
@@ -226,9 +245,9 @@ export class GridworldScene extends Phaser.Scene {
             const goal = map.createStaticLayer('goal', tileset, 0, 0)
         }
         if (map.getLayer("start")) {
-            const flatData = map.getLayer("start").data.reduce((acc, val) => acc.concat(val), []);
-            const startMarkers = flatData.filter((x)=>(x.index !== -1))
-            startMarkers.forEach((tile)=> {
+            const flatData = map.getLayer("start").data.reduce((acc: string | any[], val: any) => acc.concat(val), []);
+            const startMarkers = flatData.filter((x: { index: number; })=>(x.index !== -1))
+            startMarkers.forEach((tile: { x: number; y: number; })=> {
                 const start = this.add.sprite(tile.x * this.tileSize, tile.y * this.tileSize, "x")
                 start.setAlpha(0.7)
                 start.setOrigin(0)
@@ -237,17 +256,7 @@ export class GridworldScene extends Phaser.Scene {
             })
 
         }
-        const terrainMap = [...Array(map.height)].map(e => Array(map.width));
-        for (let x = 0; x < map.width; x++) {
-            for (let y = 0; y < map.height; y++) {
-                const tile = map.getTileAt(x, y, false, "collision")
-                if (tile) {
-                    terrainMap[y][x] = TerrainType.Wall;
-                }
-            }
-        }
-        this.mdp = new Gridworld(terrainMap)
-        this.map = map
+
     }
 
     _drawTrajectory(trajectory: Position[]) {
@@ -258,9 +267,8 @@ export class GridworldScene extends Phaser.Scene {
         const hT = this.tileSize * .5
         const startPos = trajectory[0]
         const path = new Phaser.Curves.Path(this.tileSize * startPos.x + hT, this.tileSize * startPos.y + hT)
-        const graphics = this.scene.scene.add.graphics()
-        graphics.setDepth(1);
-        graphics.lineStyle(fT / 4, 0xa9cc29, 0.6)
+
+        this._trailGraphics.lineStyle(fT / 4, 0xa9cc29, 0.6)
         for (let i = 1; i < trajectory.length; i++) {
             const pos = trajectory[i]
             let [drawX, drawY] = [pos.x, pos.y]
@@ -268,21 +276,22 @@ export class GridworldScene extends Phaser.Scene {
         }
         const lastPos = trajectory[trajectory.length - 1]
         let [drawX, drawY] = [lastPos.x, lastPos.y - 1]
-        const arrowHead = this.add.sprite(fT * drawX + hT, fT * drawY + hT, "arrows", "filled_head.png")
-        arrowHead.setDisplaySize(fT, fT)
-        arrowHead.setOrigin(.5)
-        const secondLastPos = trajectory[trajectory.length - 2]
-        const delta = [secondLastPos.x - lastPos.x, -1 * (secondLastPos.y - lastPos.y)]
-        if (delta[0] == 1) {
-            arrowHead.rotation = 1.57
-        } else if (delta[1] == -1) {
-            arrowHead.rotation = 3.14
-        } else if (delta[0] == -1) {
-            arrowHead.rotation = 4.71
-        }
-        arrowHead.setDepth(-1)
-        path.draw(graphics)
+        path.draw(this._trailGraphics)
         //graphics.generateTexture("trajectory")
+    }
+
+    _drawSpeechBubble(script: string) {
+        const ox = 24
+        const oy = 32
+        const text = this.add.text(ox, oy, script, { fontFamily: 'Georgia, Times, serif', fontSize: "18px", color: "black", backgroundColor:"white"});
+        text.setDepth(10)
+        this._speechBubbleGraphics.fillStyle(0xffffff)
+        this._speechBubbleGraphics.fillRoundedRect(text.x - 12, text.y - 8, text.width + 24, text.height + 16, 16);
+        this._speechBubbleGraphics.strokeRoundedRect(text.x - 12, text.y - 8, text.width + 24, text.height + 16, 16);
+        const tx = ox
+        const ty = oy - 7
+        this._speechBubbleGraphics.fillTriangle(tx, ty, tx + 16, ty, tx + 8, ty - 10)
+        return text;
     }
 
     _drawRotation(rotation: number[], sprites: SpriteMap, animated: boolean = true) {
@@ -369,11 +378,7 @@ export class GridworldScene extends Phaser.Scene {
             } else {
                 agent.setPosition(tS * gridX + hS, tS * gridY + hS);
             }
-
-
         }
-
-
         this.events.emit("stateDrawn")
     }
 
@@ -392,12 +397,12 @@ export class GridworldScene extends Phaser.Scene {
         this.interactionStarted = false
 
         delete this.waitTimeout
-        this.waitBar.clear()
-        this.waitBar.fillStyle(0xeeeeee, 1.0)
+        this.waitBar?.clear()
+        this.waitBar?.fillStyle(0xeeeeee, 1.0)
 
-        this.keysSprite.setFrame(0)
-        this.keysSprite.setAlpha(1.0)
-        this.waitBar.setAlpha(1.0)
+        this.keysSprite?.setFrame(0)
+        this.keysSprite?.setAlpha(1.0)
+        this.waitBar?.setAlpha(1.0)
 
         this.interactive = this._interactive
     }
@@ -453,7 +458,8 @@ export class GridworldScene extends Phaser.Scene {
                     this.waitTimeout = this.time.addEvent({delay: 1000})
                 }
                 if (this.waitTimeout) {
-                    this.waitBar.fillRect(15, 90, 90 * this.waitTimeout.getOverallProgress(), 15);
+                    const h = this.cameras.main.height
+                    this.waitBar.fillRect(15, h - 26, 90 * this.waitTimeout.getOverallProgress(), 15);
                 }
 
             }
