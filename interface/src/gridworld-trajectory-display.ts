@@ -41,7 +41,7 @@ export class GridworldTrajectoryDisplay extends GridworldTrajectoryPlayer {
         }
         this.trajectory = textToStates(this.getAttribute("trajectory"))
 
-        this.game = new GridworldGame(this.gameContainer, 32, "https://mturk.nickwalker.us/attribution/batch/4/assets/", this.getAttribute("map-name"),terrain)
+        this.game = new GridworldGame(this.gameContainer, 32, null, this.getAttribute("map-name"),terrain)
         this.game.scene.stepwise = false
         this.game.displayTrajectory = this.trajectory
 

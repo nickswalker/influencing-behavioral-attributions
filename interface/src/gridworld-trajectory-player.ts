@@ -157,7 +157,7 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
             this.diffs.push(new GridworldState([{x: current.x - prev.x, y: current.y - prev.y}]))
         }
 
-        this.game = new GridworldGame( this.gameContainer, 32, "https://mturk.nickwalker.us/attribution/batch/4/assets/", this.getAttribute("map-name"),terrain)
+        this.game = new GridworldGame( this.gameContainer, 32, null, this.getAttribute("map-name"),terrain)
         this.game.init();
         this.game.sceneCreatedDelegate = () => {
             this.freezeFrame(() => {

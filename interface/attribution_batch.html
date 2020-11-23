@@ -314,7 +314,7 @@
             <img src="assets/environment.png">
             <p>
                 At the end, we'll ask your age and gender. Note that before we accept your work, we'll check for indications that you didn't follow instructions</p>
-            <p>The whole task should take 25 minutes. You <b>can</b> complete this HIT multiple times.
+            <p>The whole task should take 25 minutes. You <b class="green">can</b> complete this HIT multiple times.
                 This HIT is designed to be compatible with recent version of desktop Chrome and Firefox. <b>It does not support mobile devices or Safari</b>.</p>
 
             <p>The next pages describe this research and the data collected in more detail.</p>
@@ -358,7 +358,7 @@
             <p>All of the information you provide will be confidential. There will be no association between your name and the answers you provide. The recordings will be analyzed by our research team to assess the effectiveness of the different behaviors used by the robot. Sample videos or snapshots from these recordings may be used in scientific articles or talks.</p>
         </div>
 
-        <div class="page">
+        <div class="page demonstration-instructions">
             <h2>Part 1: Controlling the Robot</h2>
             <p>In this part, we'll tell you a style (like "curious" or "efficient") and ask you to make the robot clean the bedroom in that style. This can be tricky, but try to think of what you can make the robot do that would make someone watching say that it's behaving in the given style. You'll repeat this for a total of 3 styles. Here's the interface you'll use for controlling the robot:</p>
 
@@ -366,7 +366,7 @@
 
             <ul>
                 <li><b>Click on the interface</b> to enable the controls. Click elsewhere on the page to disable them.</li>
-                <li>Use the <b>arrow keys</b> to move the robot up, down, right, or left</li>
+                <li>Use your <b>keyboard's arrow keys</b> to move the robot up, down, right, or left</li>
                 <li><b>Wait for the bar to fill if you want the robot to stop in a location</b>. The robot will flash each time the pause is recorded. You can wait as many times as you like and the robot will stop for longer.</li>
                 <li>The green trail drawn behind the robot is to help you remember the robot's motion</li>
                 <li>The <span class="blue">blue-shaded squares are the bedroom area</span>. You can choose to ignore the bedroom if you think it fits the style</li>
@@ -377,6 +377,7 @@
                 <li>The bar will turn from <span class="red">red</span> to <span class="green">green when the path is finished</span> </li>
             </ul>
 
+            <p>Before you continue, <b>navigate the robot into the bedroom to verify that the controls work</b></p>
         </div>
 
 
@@ -440,9 +441,8 @@
 
 <script>
     window.trajectoryIds = [0, 1, 2 ,3, 4, 5]
-    //window.trajectoryIds = [${id0}, ${id1}, ${id2}, ${id3}, ${id4}, ${id5}]
-    window.attributions = ["curious", "brave", "efficient"]
-    //window.trajectoryIds = [${attr0}, ${attr1}, ${attr2}]
+    //window.trajectoryIds = [${id0}, ${id1}, ${id2}]
+    window.attributions = ["${aid0}", "${aid1}", "${aid2}"]
 </script>
 
 <script src="dist/vendors.bundle.js" type="module"></script>

@@ -94,6 +94,16 @@ function validateNext(page: HTMLElement) : string {
             return "Please select an answer"
         }
 
+    } else if (page.classList.contains("demonstration-instructions")) {
+        const demoUI = page.querySelector("#instructional");
+        const trajString = demoUI.getAttribute("trajectory") ?? "[]"
+        const traj = JSON.parse(trajString
+            .replace(/\(/g, '[')
+            .replace(/\)/g, ']')
+         )
+        if (!traj.some((point: any) =>{return point[0] >= 19})) {
+            return "Make sure you can navigate the robot into the bedroom before continuing"
+        }
     } else if (page.classList.contains("attribution")) {
         let currentVideo = page.querySelector("video");
         if (currentVideo) {
