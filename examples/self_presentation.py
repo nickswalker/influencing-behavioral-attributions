@@ -5,13 +5,10 @@ import numpy as np
 import scipy.stats
 
 import irl.mdp.gridworld as gridworld
-import viz.gridworld
 
 from irl import maxent, value_iteration
 from irl.policy import DeterministicPolicy
 from observer.observer import HugsWall
-
-import matplotlib.pyplot as plt
 
 
 class NpEncoder(json.JSONEncoder):
