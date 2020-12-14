@@ -3,12 +3,13 @@ import math
 import re
 
 import pandas as pd
+import sklearn
 from scipy.stats import ttest_rel
 import matplotlib.pyplot as plt
-from sklearn.decomposition import FactorAnalysis, PCA
-from factor_analyzer import FactorAnalyzer
+from factor_analyzer import FactorAnalyzer, ModelSpecificationParser, ConfirmatoryFactorAnalyzer
 from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
+from sklearn.metrics import confusion_matrix, plot_confusion_matrix
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -17,11 +18,14 @@ from sklearn import linear_model
 import statsmodels.api as sm
 import numpy as np
 from sklearn.model_selection import train_test_split
+from joblib import dump, load
 
 from matplotlib.backends.backend_pdf import PdfPages
 
-question_code_to_name = {"b1": "brave", "b2": "broken", "b3": "clumsy", "b4": "curious", "b5": "efficient",
-                         "b6": "energetic", "b7": "intelligent", "b8": "lazy", "b9": "reliable", "b10": "scared"}
+import ast
+
+question_code_to_name = {"b1": "broken", "b2": "clumsy", "b3": "competent", "b4": "confused", "b5": "curious",
+                         "b6": "efficient", "b7": "energetic", "b8": "focused", "b9": "intelligent", "b10": "investigative", "b11": "lazy", "b12": "lost", "b13": "reliable", "b14": "responsible"}
 question_names = sorted(list(question_code_to_name.values()))
 feature_names = ["goal_cov",
                  "overlap",
@@ -35,82 +39,14 @@ feature_names = ["goal_cov",
                  "idle time",
                  "start-stop template match"
                  ]
-feats = [[1.0, 0.2911392405063291, 0.5602836879432624, 0.6363636363636364, 0.07792207792207792, 0.2978723404255319, 0.0,
-          0.23404255319148937, 0.09507640067911714, 0.0, 0.02564102564102564],
-         [0.0, 0.06060606060606055, 0.23404255319148937, 0.5806451612903226, 0.0967741935483871, 0.0, 0.0, 0.0,
-          0.05263157894736842, 0.0, 0.0625],
-         [1.0, 0.2784810126582279, 0.5602836879432624, 0.6493506493506493, 0.11688311688311688, 0.2978723404255319,
-          0.02127659574468085, 0.23404255319148937, 0.0967741935483871, 0.0, 0.02564102564102564],
-         [1.0, 0.1428571428571429, 0.5460992907801419, 0.48, 0.16, 0.3404255319148936, 0.0, 0.2127659574468085,
-          0.11205432937181664, 0.0, 0.02631578947368421],
-         [0.9574468085106383, 0.4563106796116505, 0.7304964539007093, 0.33663366336633666, 0.7722772277227723,
-          0.2978723404255319, 0.0, 0.23404255319148937, 0.09507640067911714, 0.0, 0.0196078431372549],
-         [0.25531914893617025, 0.21621621621621623, 0.2624113475177305, 0.7142857142857143, 0.0, 0.0851063829787234,
-          0.0, 0.0851063829787234, 0.04923599320882852, 0.0, 0.05555555555555555],
-         [0.9787234042553191, 0.2857142857142857, 0.5460992907801419, 0.7066666666666667, 0.12, 0.2978723404255319, 0.0,
-          0.23404255319148937, 0.0933786078098472, 0.0, 0.02631578947368421],
-         [1.0, 0.504424778761062, 0.8014184397163121, 0.5045045045045045, 0.16216216216216217, 0.2978723404255319, 0.0,
-          0.8723404255319149, 0.09507640067911714, 0.0, 0.017857142857142856],
-         [0.9787234042553191, 0.42708333333333337, 0.6808510638297872, 0.2872340425531915, 0.06382978723404255,
-          0.2978723404255319, 0.0, 0.3191489361702128, 0.0933786078098472, 0.24210526315789474, 0.5052631578947369],
-         [0.9574468085106383, 0.3296703296703297, 0.6453900709219859, 0.6067415730337079, 0.10112359550561797,
-          0.3404255319148936, 0.0425531914893617, 0.425531914893617, 0.1035653650254669, 0.0, 0.022222222222222223],
-         [0.9787234042553191, 0.30379746835443033, 0.5602836879432624, 0.6363636363636364, 0.0, 0.2978723404255319, 0.0,
-          0.23404255319148937, 0.0933786078098472, 0.0, 0.02564102564102564],
-         [0.9361702127659575, 0.3205128205128205, 0.5531914893617021, 0.7368421052631579, 0.039473684210526314,
-          0.2553191489361702, 0.0, 0.2553191489361702, 0.0899830220713073, 0.012987012987012988, 0.025974025974025976],
-         [0.0, 0.05714285714285716, 0.24822695035460993, 0.48484848484848486, 0.09090909090909091, 0.0, 0.0, 0.0,
-          0.05602716468590832, 0.0, 0.058823529411764705],
-         [0.0, 0.28888888888888886, 0.3191489361702128, 0.5581395348837209, 0.06976744186046512, 0.0,
-          0.2978723404255319, 0.0, 0.05432937181663837, 0.18181818181818182, 0.09090909090909091],
-         [0.0, 0.06060606060606055, 0.23404255319148937, 0.5806451612903226, 0.0, 0.0, 0.0, 0.0, 0.05263157894736842,
-          0.0, 0.0625],
-         [0.7021276595744681, 0.47619047619047616, 0.5957446808510638, 0.5975609756097561, 0.07317073170731707,
-          0.425531914893617, 0.0, 0.3191489361702128, 0.07470288624787776, 0.012048192771084338, 0.04819277108433735],
-         [0.9574468085106383, 0.2921348314606742, 0.6312056737588653, 0.4482758620689655, 0.10344827586206896,
-          0.3404255319148936, 0.02127659574468085, 0.23404255319148937, 0.10696095076400679, 0.0, 0.022727272727272728],
-         [1.0, 0.2784810126582279, 0.5602836879432624, 0.7402597402597403, 0.11688311688311688, 0.2978723404255319,
-          0.02127659574468085, 0.2553191489361702, 0.0967741935483871, 0.0, 0.02564102564102564],
-         [1.0, 0.15384615384615385, 0.6453900709219859, 0.48314606741573035, 0.16853932584269662, 0.3404255319148936,
-          0.0, 0.2127659574468085, 0.1307300509337861, 0.0, 0.022222222222222223],
-         [1.0, 0.16190476190476188, 0.7446808510638298, 0.46601941747572817, 0.17475728155339806, 0.3404255319148936,
-          0.0, 0.2127659574468085, 0.1494057724957555, 0.0, 0.019230769230769232],
-         [1.0, 0.18487394957983194, 0.8439716312056738, 0.47863247863247865, 0.15384615384615385, 0.3404255319148936,
-          0.0, 0.2127659574468085, 0.16468590831918506, 0.0, 0.01694915254237288],
-         [1.0, 0.45871559633027525, 0.7730496453900709, 0.3177570093457944, 0.7289719626168224, 0.2765957446808511, 0.0,
-          0.2553191489361702, 0.100169779286927, 0.0, 0.018518518518518517],
-         [0.9574468085106383, 0.4363636363636364, 0.7801418439716312, 0.32407407407407407, 0.75, 0.48936170212765956,
-          0.0, 0.23404255319148937, 0.10526315789473684, 0.009174311926605505, 0.03669724770642202],
-         [0.9574468085106383, 0.4473684210526315, 0.8085106382978723, 0.3482142857142857, 0.6964285714285714,
-          0.3191489361702128, 0.19148936170212766, 0.2553191489361702, 0.10696095076400679, 0.061946902654867256,
-          0.035398230088495575],
-         [0.25531914893617025, 0.2564102564102564, 0.2765957446808511, 0.7027027027027027, 0.0, 0.0851063829787234, 0.0,
-          0.10638297872340426, 0.04923599320882852, 0.05263157894736842, 0.15789473684210525],
-         [0.276595744680851, 0.26415094339622647, 0.375886524822695, 0.6666666666666666, 0.0, 0.0851063829787234,
-          0.2978723404255319, 0.0851063829787234, 0.06621392190152801, 0.11538461538461539, 0.07692307692307693],
-         [0.25531914893617025, 0.23076923076923073, 0.46099290780141844, 0.7142857142857143, 0.0, 0.0851063829787234,
-          0.0, 0.0851063829787234, 0.08488964346349745, 0.0, 0.03125],
-         [0.6808510638297872, 0.4878048780487805, 0.5815602836879432, 0.575, 0.1125, 0.2978723404255319, 0.0,
-          0.3829787234042553, 0.07130730050933787, 0.012345679012345678, 0.04938271604938271],
-         [0.9148936170212766, 0.28, 0.5319148936170213, 0.684931506849315, 0.1232876712328767, 0.19148936170212766,
-          0.02127659574468085, 0.23404255319148937, 0.09168081494057725, 0.0, 0.02702702702702703],
-         [0.9574468085106383, 0.3214285714285714, 0.5957446808510638, 0.6585365853658537, 0.21951219512195122,
-          0.3191489361702128, 0.0, 0.2553191489361702, 0.0967741935483871, 0.012048192771084338, 0.04819277108433735],
-         [1.0, 0.504424778761062, 0.8014184397163121, 0.5045045045045045, 0.16216216216216217, 0.2978723404255319, 0.0,
-          0.8723404255319149, 0.09507640067911714, 0.0, 0.017857142857142856],
-         [0.8085106382978724, 0.5480769230769231, 0.7375886524822695, 0.47058823529411764, 0.17647058823529413,
-          0.3617021276595745, 0.0, 0.8085106382978723, 0.07979626485568761, 0.009708737864077669, 0.038834951456310676],
-         [0.9787234042553191, 0.5080645161290323, 0.8794326241134752, 0.30327868852459017, 0.19672131147540983,
-          0.3191489361702128, 0.0, 0.851063829787234, 0.1035653650254669, 0.008130081300813009, 0.032520325203252036],
-         [0.7234042553191489, 0.3157894736842105, 0.5390070921985816, 0.4864864864864865, 0.04054054054054054,
-          0.2765957446808511, 0.0, 0.2765957446808511, 0.08828522920203735, 0.14666666666666667, 0.32],
-         [0.9574468085106383, 0.4329896907216495, 0.6879432624113475, 0.2631578947368421, 0.15789473684210525,
-          0.2765957446808511, 0.02127659574468085, 0.3191489361702128, 0.0933786078098472, 0.22916666666666666,
-          0.4791666666666667],
-         [0.9787234042553191, 0.4363636363636364, 0.7801418439716312, 0.2777777777777778, 0.05555555555555555,
-          0.2978723404255319, 0.0, 0.3191489361702128, 0.10526315789473684, 0.24770642201834864, 0.5137614678899083]]
+feats = [[1.0, 0.2911392405063291, 0.5602836879432624, 0.6363636363636364, 0.07792207792207792, 0.2978723404255319, 0.0, 0.23404255319148937, 0.09507640067911714, 0.0, 0.02564102564102564], [1.0, 0.41509433962264153, 0.75177304964539, 0.46153846153846156, 0.25961538461538464, 0.3829787234042553, 0.0, 0.10638297872340426, 0.10526315789473684, 0.2571428571428571, 0.09523809523809523], [0.25531914893617025, 0.5316455696202531, 0.5602836879432624, 0.23376623376623376, 0.6623376623376623, 0.5531914893617021, 0.0, 0.1702127659574468, 0.06281833616298811, 0.0, 0.02564102564102564], [1.0, 0.5714285714285714, 1.0, 0.35526315789473684, 0.3355263157894737, 0.723404255319149, 0.0, 0.723404255319149, 0.11205432937181664, 0.0, 0.013071895424836602], [0.3829787234042553, 0.07692307692307687, 0.2765957446808511, 0.5405405405405406, 0.16216216216216217, 0.14893617021276595, 0.0, 0.0425531914893617, 0.06112054329371817, 0.0, 0.05263157894736842], [0.0, 0.6153846153846154, 0.2765957446808511, 0.6216216216216216, 0.0, 0.0, 0.0, 0.0, 0.025466893039049237, 0.5526315789473685, 0.42105263157894735], [0.0, 0.4772727272727273, 0.3120567375886525, 0.7142857142857143, 0.07142857142857142, 0.5106382978723404, 0.0, 0.0, 0.03904923599320883, 0.3488372093023256, 0.18604651162790697], [0.9574468085106383, 0.3370786516853933, 0.6312056737588653, 0.5977011494252874, 0.06896551724137931, 0.3617021276595745, 0.0425531914893617, 0.425531914893617, 0.100169779286927, 0.0, 0.022727272727272728], [0.8936170212765957, 0.29761904761904767, 0.5957446808510638, 0.6097560975609756, 0.07317073170731707, 0.10638297872340426, 0.0, 0.2553191489361702, 0.100169779286927, 0.012048192771084338, 0.04819277108433735], [0.9787234042553191, 0.3142857142857143, 0.7446808510638298, 0.4368932038834951, 0.2621359223300971, 0.3829787234042553, 0.0, 0.10638297872340426, 0.12224108658743633, 0.23076923076923078, 0.09615384615384616], [0.8723404255319149, 0.4579439252336449, 0.7588652482269503, 0.47619047619047616, 0.17142857142857143, 0.40425531914893614, 0.0, 0.06382978723404255, 0.09847198641765705, 0.3584905660377358, 0.16981132075471697], [0.23404255319148937, 0.5189873417721519, 0.5602836879432624, 0.23376623376623376, 0.8571428571428571, 0.574468085106383, 0.0, 0.14893617021276595, 0.06451612903225806, 0.0, 0.02564102564102564], [0.25531914893617025, 0.5568181818181819, 0.624113475177305, 0.22093023255813954, 0.6627906976744186, 0.5106382978723404, 0.19148936170212766, 0.19148936170212766, 0.06621392190152801, 0.05747126436781609, 0.06896551724137931], [1.0, 0.5714285714285714, 1.0, 0.35526315789473684, 0.3355263157894737, 0.723404255319149, 0.0, 0.723404255319149, 0.11205432937181664, 0.0, 0.013071895424836602], [1.0, 0.6023391812865497, 1.0, 0.33727810650887574, 0.31952662721893493, 0.7446808510638298, 0.0, 1.0, 0.11544991511035653, 0.0058823529411764705, 0.023529411764705882], [0.574468085106383, 0.11764705882352944, 0.3617021276595745, 0.5102040816326531, 0.1836734693877551, 0.19148936170212766, 0.0, 0.10638297872340426, 0.07640067911714771, 0.0, 0.04], [0.3829787234042553, 0.16049382716049387, 0.574468085106383, 0.5189873417721519, 0.1518987341772152, 0.14893617021276595, 0.02127659574468085, 0.0425531914893617, 0.11544991511035653, 0.0, 0.025], [0.0, 0.6060606060606061, 0.23404255319148937, 0.5483870967741935, 0.1935483870967742, 0.0, 0.0, 0.0, 0.022071307300509338, 0.46875, 0.375], [0.0, 0.625, 0.28368794326241137, 0.6052631578947368, 0.0, 0.02127659574468085, 0.0, 0.0, 0.025466893039049237, 0.358974358974359, 0.41025641025641024], [0.0, 0.6744186046511628, 0.3049645390070922, 0.7073170731707317, 0.07317073170731707, 0.5106382978723404, 0.0, 0.0, 0.023769100169779286, 0.38095238095238093, 0.19047619047619047], [0.0, 0.28125, 0.22695035460992907, 0.6666666666666666, 0.1, 0.2553191489361702, 0.0, 0.0, 0.03904923599320883, 0.16129032258064516, 0.1935483870967742]]
 feats = np.stack(feats)
 
+factor_structure = {"competent":
+                        ["competent", "efficient", "energetic", "focused", "intelligent", "reliable", "responsible"],
+                    "broken": ["broken", "clumsy", "confused", "lazy", "lost"],
+                   "curious": ["curious", "investigative"]
+                    }
 
 def plot_components(components, ax, question_names, condition_name, title_prefix=""):
     loading_mat = components
@@ -131,6 +67,20 @@ def plot_components(components, ax, question_names, condition_name, title_prefix
         for j in range(num_factors):
             text = ax.text(j, i, "{:.2f}".format(loading_mat[i, j]),
                            ha="center", va="center", color="w", fontsize=8)
+
+def make_conf_mat_plots(clfs, x, y):
+        fig, axs = plt.subplots(len(clfs), 1, figsize=(8.5, 11))
+        fig.suptitle("Attribution Confusion Matrices")
+        i = 0
+        for clf in clfs:
+            row = i
+            ax = axs[row]
+            ax.set_title(["competent", "broken", "curious"][i])
+            plot_confusion_matrix(clf, x, y[i], ax=ax, display_labels=["Disagree", "Neither", "Agree"])
+            i += 1
+        fig.subplots_adjust(hspace=.5)
+        plt.show()
+        return fig
 
 
 def make_fa_plots(grouped):
@@ -158,8 +108,6 @@ def make_fa_plots(grouped):
 
 def make_fa_plots(data, analysis):
     # Run factor analysis by condition
-
-
     fig, ax = plt.subplots(1, 1, figsize=(8.5, 11))
     plot_components(analysis.loadings_, ax, list(question_code_to_name.values()), "All", title_prefix="FA ")
 
@@ -199,7 +147,7 @@ def fit_lin_reg(condition_ratings):
         print("lin reg R2 {} \t\t{:.2}".format(q_name, model.score(x, y)))
 
     print("Linear regression targeting factors -------------------")
-    factor_names = ["factor"+str(i) for i in range(4)]
+    factor_names = ["factor"+str(i) for i in range(3)]
     y = condition_ratings[factor_names].to_numpy()
     x = np.vstack(condition_ratings["features"])
 
@@ -244,24 +192,42 @@ def fit_classification(condition_ratings):
         print("svm acc {} \t\t {:.2}".format(attr_name, clf.score(X_test, y_test[attr_name].to_numpy())))
 
     print("Classification over features targeting factors---------------")
-    factor_names = ["factor" + str(i) for i in range(4)]
+    factor_names = ["factor" + str(i) for i in range(3)]
     y = condition_ratings[factor_names].copy()
     x = np.vstack(condition_ratings["features"])
     X_train, X_test, y_train, y_test = train_test_split(x, y, test_size=.2, random_state=0)
+    factor_clfs = []
+    conf_mats = []
+    y_tests = []
     for factor in factor_names:
-        f_data = y_train[factor].copy()
-        f_data[f_data < f_data.quantile(.33)] = 0
-        f_data[(f_data.quantile(.33) < f_data) & (f_data < f_data.quantile(.66))] = 1
-        f_data[f_data.quantile(.66) < f_data] = 2
-        f_data = f_data.astype(int)
+        train = y_train[factor].copy()
+        low = train < -.5
+        mid = (-.5 < train) & (train < .5)
+        high = .5 < train
+        train[low] = 0
+        train[mid] = 1
+        train[high] = 2
+        train = train.astype(int)
         clf = make_pipeline(StandardScaler(), SVC(gamma='auto'))
-        clf.fit(X_train, f_data.to_numpy())
-        t_data = y_test[factor].copy()
-        t_data[t_data < f_data.quantile(.33)] = 0
-        t_data[(f_data.quantile(.33) < t_data) & (t_data < t_data.quantile(.66))] = 1
-        t_data[f_data.quantile(.66) < t_data] = 2
-        t_data = t_data.astype(int)
-        print("svm acc {} \t\t {:.2}".format(factor, clf.score(X_test, t_data.to_numpy())))
+        clf.fit(X_train, train.to_numpy())
+        test = y_test[factor].copy()
+        low = test < -.5
+        mid = (-.5 < test) & (test < .5)
+        high = .5 < test
+
+        test[low] = 0
+        test[mid] = 1
+        test[high] = 2
+        test = test.astype(int)
+        test.reset_index(None, drop=True, inplace=True)
+        print("svm acc {} \t\t {:.2}".format(factor, clf.score(X_test, test.to_numpy())))
+
+        conf_mats.append(confusion_matrix(test, clf.predict(X_test), sample_weight=None, normalize=None))
+        y_tests.append(test)
+        factor_clfs.append(clf)
+    conf_plots = make_conf_mat_plots(factor_clfs, X_test, y_tests)
+    dump(factor_clfs, "factor_svms.pickle")
+    return factor_clfs, conf_plots
 
 
 def process_turk_files(paths, filter_rejected=True):
@@ -286,6 +252,12 @@ def process_turk_files(paths, filter_rejected=True):
         except StopIteration:
             return name
 
+    def drop_aid_trailing_number(name):
+        try:
+            return next(re.finditer(r'Input.aid', name)).group(0)
+        except StopIteration:
+            return name
+
     # Ignore index so that we get a new ID per row, instead of numbers by file
     frame = pd.concat([pd.read_csv(path, na_filter=True) for path in paths], ignore_index=True)
     if filter_rejected:
@@ -304,35 +276,60 @@ def process_turk_files(paths, filter_rejected=True):
             frame[summary_col_name] = (frame[question.columns] == 1).idxmax(axis=1).str.extract(r"(\d+)$").astype(int)
 
     frame.drop(frame.columns[frame.columns.str.contains("yes")], axis=1, inplace=True)
-    condition_views = []
 
+    condition_views = []
     # Count the occurences of Input.id. Sometimes we issue batches with different numbers
     num_conditions = frame.filter(regex='^Input.id', axis=1).shape[1]
     for n in range(num_conditions):
         answers_cols = list(frame.columns[frame.columns.str.contains("con_" + str(n))])
+        answers_cols = list(filter(lambda x: "traj" not in x, answers_cols))
         columns = ["Input.id" + str(n), "WorkerId"] + answers_cols
         condition_views.append(frame[columns].rename(columns=drop_con_number).rename(columns=drop_id_trailing_number))
     condition_ratings = pd.concat(condition_views, ignore_index=True)
     # We loaded many different files. Some may not have as many command columns as others
     condition_ratings.dropna(inplace=True)
 
+    demo_views = []
+    # Count the occurences of Input.id. Sometimes we issue batches with different numbers
+    num_demos = frame.filter(regex='^Input.aid', axis=1).shape[1]
+    for n in range(num_demos):
+        answers_cols = list(frame.columns[frame.columns.str.contains("con_" + str(n))])
+        answers_cols = list(filter(lambda x: "traj" in x, answers_cols))
+        columns = ["Input.aid" + str(n), "WorkerId"] + answers_cols
+        demo_views.append(frame[columns].rename(columns=drop_con_number).rename(columns=drop_aid_trailing_number))
+    demos = pd.concat(demo_views, ignore_index=True)
+    # We loaded many different files. Some may not have as many command columns as others
+    demos.dropna(inplace=True)
+
     # Drop all the extra input or answer fields except those you want to use for additional stats
     other_data = frame.drop(
         columns=[c for c in frame.columns if
                  ("Input" in c or "Answer" in c) and c != "Answer.comment" and c != "Input.hitid"])
 
-    nice_names = {"Answer.paraphrase": "paraphrase", "Input.command": "command", "Answer.newcommand": "command",
-                  "Input.hitid": "hitid"}
-    other_data.rename(columns=nice_names, inplace=True)
     # Weird behavior on explain column if I do "Answer."
     condition_ratings.columns = condition_ratings.columns.str.lstrip(r'Answer')
     condition_ratings.columns = condition_ratings.columns.str.lstrip(r'.')
     condition_ratings.rename(columns=question_code_to_name, inplace=True)
     condition_ratings.columns = condition_ratings.columns.str.lstrip("Input.")
-    return condition_ratings, other_data
 
+    demos.columns = demos.columns.str.lstrip("Answer.")
+    demos.columns = demos.columns.str.lstrip("Input.")
+    return condition_ratings, demos, other_data
 
-condition_ratings, other_data = process_turk_files(glob.glob("Batch_*.csv"))
+condition_ratings, demos, other_data = process_turk_files(glob.glob("pilot1.csv"))
+
+demo_trajs = list(demos["raj"].apply(lambda x: ast.literal_eval(x)))
+#demo_trajs = list(demos["raj"])
+demo_exps = list(demos["xplain_traj"])
+demo_prompts = list(demos["aid"])
+demo_wids = list(demos["WorkerId"])
+
+"""print("DEMOS-------------")
+print(demo_trajs)
+print(demo_prompts)
+print(demo_exps)
+print(demo_wids)
+print("DEMO END---------------------")"""
 
 # Add feats and traj data
 condition_ratings["features"] = condition_ratings["id"].apply(lambda x: feats[x]).to_numpy()
@@ -340,37 +337,77 @@ condition_ratings["trajectories"] = condition_ratings["id"].apply(lambda x: feat
 
 # Fill in missing values
 imp = IterativeImputer(missing_values=6, max_iter=10, random_state=0)
-imp.fit(condition_ratings[question_names].to_numpy())
-condition_ratings[question_names] = np.rint(imp.transform(condition_ratings[question_names].to_numpy())).astype(int)
+to_impute = condition_ratings[question_names].to_numpy()
+imp.fit(to_impute)
+condition_ratings[question_names] = np.rint(imp.transform(to_impute)).astype(int)
 
 # Create factor loadings
-num_factors = 4
-transformer = FactorAnalyzer(num_factors)
-analysis = transformer.fit(condition_ratings[question_names].to_numpy())
-fa_plot = make_fa_plots(condition_ratings, analysis)
-loadings = pd.DataFrame(analysis.loadings_.T,columns=question_names)
+num_factors = 3
+exp_transformer = FactorAnalyzer(num_factors)
+analysis = exp_transformer.fit(condition_ratings[question_names].to_numpy())
+print("Eignvalues:", analysis.get_eigenvalues())
+# Use this line to keep the model from the pilot
+# dump(exp_transformer, "factor_model.pickle")
 
+fa_plot = make_fa_plots(condition_ratings, analysis)
+
+
+
+model_spec = ModelSpecificationParser.parse_model_specification_from_dict(condition_ratings[question_names].to_numpy(), factor_structure)
+cfa = ConfirmatoryFactorAnalyzer(model_spec,42)
+cfa_res = cfa.fit(condition_ratings[question_names])
+exp_transformer = load("factor_model.pickle")
+transformed = exp_transformer.transform(condition_ratings[question_names].to_numpy())
+
+factor_score_weights = pd.DataFrame(analysis.loadings_.T,columns=question_names)
+factor_score_weights[factor_score_weights > .4] = 1
+factor_score_weights[factor_score_weights <= .4] = 0
+
+factor_names = ["factor" + str(i) for i in range(num_factors)]
+condition_ratings[factor_names] = transformed
 for i in range(num_factors):
-    condition_ratings["factor"+str(i)] = (condition_ratings[question_names] * loadings.iloc[i]).sum(axis=1)
+    num_components = factor_score_weights.iloc[i].sum()
+    condition_ratings["afactor"+str(i)] = (condition_ratings[question_names] * factor_score_weights.iloc[i]).sum(axis=1) /num_components
 
 fit_lin_reg(condition_ratings)
-fit_classification(condition_ratings)
+conf_mats, conf_plots = fit_classification(condition_ratings)
+
 by_condition = condition_ratings.groupby("id")
 cond_qual = []
-for i in range(36):
+for i in range(21):
     cond_qual.append([])
 for name, group in by_condition:
-    print(name)
-    for i, (describe, explain) in group[["describe", "explain"]].iterrows():
-        print(describe)
-        print(explain)
-        print("")
-        cond_qual[int(name)].append(describe + "---" + explain)
+    #print(name)
+    for _, (describe, explain, wid) in group[["describe", "explain", "WorkerId"]].iterrows():
+        #print(describe)
+        #print(explain)
+       # print("")
+        cond_qual[int(name)].append(describe + "---" + explain + "--" + wid)
 
-print(cond_qual)
+#print(cond_qual)
 turker_performance = pd.DataFrame()
 turker_performance["HITTime"] = other_data.groupby("WorkerId")["WorkTimeInSeconds"].mean()
 # turker_performance["Comment"] = other_data.groupby("WorkerId")["Answer.comment"].apply(lambda x: ','.join(x))
+
+
+# By worker
+by_worker = condition_ratings.groupby("WorkerId")
+for worker, group in by_worker:
+    print(worker)
+    for _, (describe, explain, wid) in group[["describe", "explain", "WorkerId"]].iterrows():
+        print(describe)
+        print(explain)
+    print("")
+       #print("")
+
+demos_by_worker = demos.groupby("WorkerId")
+for worker, group in demos_by_worker:
+    print(worker)
+    for _, (aid, explain) in group[["aid","xplain_traj"]].iterrows():
+        print(aid)
+        print(explain)
+    print("")
+       #print("")
 
 turker_performance.to_csv("turker_stats.txt", index=False)
 
@@ -379,7 +416,7 @@ num_participants = 6
 con_hists = []
 for condition_code, group in by_condition:
     i = 0
-    fig, axs = plt.subplots(5, 2, figsize=(8.5, 11))
+    fig, axs = plt.subplots((len(question_names) + 1) // 2, 2, figsize=(8.5, 11))
     condition_name = str(condition_code)
     fig.suptitle("Condition " + condition_name)
     for question in question_names:
@@ -394,6 +431,9 @@ for condition_code, group in by_condition:
         # as_array = question.to_numpy(dtype=np.int).flatten()
         as_dict = q_data.append(pd.Series([1, 2, 3, 4, 5]), ignore_index=True).value_counts()
         as_dict = {key: value - 1 for key, value in as_dict.items()}
+        if 6 in as_dict.keys():
+            print("IMPUTATION PROBLEM")
+            del as_dict[6]
         values = [value for _, value in sorted(as_dict.items())]
         ax.bar([1, 2, 3, 4, 5], values)
         i += 1
@@ -422,7 +462,7 @@ for question in question_names:
     plt.show()
     feat_v_attr_scatters.append(fig)
 
-fig, axs = plt.subplots(5, 2, figsize=(8.5, 11))
+fig, axs = plt.subplots((len(question_names) + 1) // 2, 2, figsize=(8.5, 11))
 condition_name = "All Conditions"
 i = 0
 for question in question_names:
@@ -437,11 +477,14 @@ for question in question_names:
     # as_array = question.to_numpy(dtype=np.int).flatten()
     as_dict = q_data.append(pd.Series([1, 2, 3, 4, 5]), ignore_index=True).value_counts()
     as_dict = {key: value - 1 for key, value in as_dict.items()}
+    if 6 in as_dict.keys():
+        print("IMPUTATION PROBLEM")
+        del as_dict[6]
     values = [value for _, value in sorted(as_dict.items())]
     ax.bar([1, 2, 3, 4, 5], values)
     i += 1
 # plt.show()
-# con_hists.append(fig)
+con_hists.append(fig)
 
 
 
@@ -453,6 +496,8 @@ ax.grid(axis="y")
 q_data = pd.Series(condition_ratings[question_names].to_numpy().flatten())
 as_dict = q_data.append(pd.Series([1, 2, 3, 4, 5]), ignore_index=True).value_counts()
 as_dict = {key: value - 1 for key, value in as_dict.items()}
+if 6 in as_dict:
+    del as_dict[6]
 values = [value for _, value in sorted(as_dict.items())]
 ax.set_ylim((0, max(values)))
 ax.set_yticks(np.arange(0, max(values), 10))
@@ -460,8 +505,9 @@ ax.bar([1, 2, 3, 4, 5], values)
 plt.show()
 con_hists.append(fig)
 
-with PdfPages('../data/{}_plots.pdf'.format(str(0))) as pp:
+with PdfPages('../data/plots.pdf') as pp:
     pp.savefig(fa_plot)
+    pp.savefig(conf_plots)
     for fig in con_hists:
         pp.savefig(fig)
     for fig in feat_v_attr_scatters:
