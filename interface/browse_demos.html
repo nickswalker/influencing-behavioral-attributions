@@ -25,6 +25,11 @@
 <script type="module" src="dist/interactive.bundle.js"></script>
 <script>
 
+    let explanations = []
+    let trajectories = []
+    let workerIds = []
+    let prompts = []
+    let features = []
     let featureNames = ["goal_cov",
         "overlap",
         "length",
@@ -41,22 +46,16 @@
     function getJSON(path) {
         return fetch(path).then(response => response.json());
     }
-    let trajectories = []
-    let features = []
-    let qual = []
     // load JSON data; then proceed
-    getJSON('sampled_pool.json').then(data => {
+    getJSON('active1_demos.json').then(data => {
         trajectories = JSON.parse(data["trajectories"]
             .replace(/\(/g, '[')
             .replace(/\)/g, ']')
         );
-        features = data["features"]
-        setTraj(i)
-    })
-
-    getJSON(".json").then(data => {
-        qual = data["summary"]
-        setTraj(i)
+        explanations = data["explanations"]
+        workerIds = data["workerIds"]
+        prompts = data["prompts"]
+        setTraj(0)
     })
 
     let player = document.getElementById("player")
@@ -78,13 +77,16 @@
             }
         }
         index.innerText = String(i) + "\n " + featSummary
-        if (i < qual.length) {
-            let qualSummary = ""
-            for (let j = 0; j < qual[i].length; j++) {
-                qualSummary += qual[i][j] + "\n\n"
-            }
-
-            document.getElementById("qual").innerText = qualSummary
+        const qual = document.getElementById("qual")
+        qual.innerText = ""
+        if (i < prompts.length) {
+            qual.innerText += prompts[i] + "\n"
+        }
+        if (i < explanations.length) {
+            qual.innerText += explanations[i] + "\n"
+        }
+        if (i < workerIds.length) {
+            qual.innerText += workerIds[i] + "\n"
         }
     }
     function recordAndAdvance() {
@@ -129,7 +131,7 @@
             player.play()
         })
     })
-
+    setTraj(0)
 </script>
 </body>
 </html>

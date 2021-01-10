@@ -20,6 +20,8 @@ declare global {
 
 }
 
+let debugMode = false
+
 function render(attributions: string[], trajectoryIds: number[]) {
     let attributionInsertionContainer = document.querySelector("#attribution-insertion-region")
     let conditionTemplate = document.querySelector("#attribution").innerHTML;
@@ -79,6 +81,10 @@ function nameAllInputs() {
 
 
 function validateNext(page: HTMLElement) : string {
+    if (debugMode) {
+        console.log("Skipping validation")
+        return null;
+    }
     if (page.classList.contains("qualification")) {
         let radioGroup = page.querySelector("crowd-radio-group");
         let options = radioGroup.querySelectorAll("crowd-radio-button")
@@ -185,6 +191,17 @@ function randomizeQuestionOrder(){
 
     return allOrderings
 }
+
+document.addEventListener('keydown', function(event) {
+    if (event.ctrlKey && event.key === 'p') {
+        debugMode = !debugMode
+        if (debugMode) {
+            alert('Debug mode enabled');
+        } else {
+            alert('Debug mode disabled')
+        }
+    }
+});
 
 
 render(window.attributions,window.trajectoryIds)
