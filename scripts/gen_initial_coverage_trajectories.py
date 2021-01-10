@@ -1,4 +1,5 @@
 import itertools
+import json
 
 from functools import partial
 import numpy as np
@@ -93,10 +94,11 @@ if __name__ == '__main__':
 
     print("Neighbors")
     # nei_trajs, nei_feats = sample_neighbors(pool, 2, grid)
-    nei_trajs, nei_feats = sample_random_goal_neighbor(pool, 2, grid)
+    nei_trajs = list(itertools.chain.from_iterable(sample_random_goal_neighbor(pool, 2, grid)))
+    nei_feats = np.array(list(map(TrajectoryNode.featurizer, nei_trajs)))
     print("Mean manhat diff: {}".format(spatial.distance.pdist(nei_feats, "cityblock").mean()))
 
-    print(list(itertools.chain(pool, nei_trajs)))
-    print("-------")
-
-    print(np.vstack([feat_pool, nei_feats]).tolist())
+    pool = pool + nei_trajs
+    data = {"trajectories": str(pool), "features": np.vstack(map(TrajectoryNode.featurizer, pool)).tolist()}
+    with open("initial_trajs.json") as f:
+        json.dump(data, f)

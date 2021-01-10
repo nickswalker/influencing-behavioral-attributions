@@ -21,6 +21,7 @@ class TrajectoryNode:
         self.G = 0
 
     def move_cost(self, other):
+        # Designed to be used with an external cost
         return 0
 
     def __key(self):

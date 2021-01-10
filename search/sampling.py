@@ -4,7 +4,7 @@ import numpy as np
 
 from search.trajectory import TrajectoryNode, ANY_PLAN
 from search.metric import make_directed_l2, feat_l2
-from search.routine import hill_climb
+from search.routine import hill_descend
 
 
 def sample_diverse(pool, samples_per_orig, grid):
@@ -28,9 +28,9 @@ def sample_diverse(pool, samples_per_orig, grid):
                 # feat dim.
                 return feat_dim - total.min()
 
-            modificiations = hill_climb(TrajectoryNode(orig),
-                                        TrajectoryNode(ANY_PLAN, tuple([1.0] * len(feat_pool[0]))), grid,
-                                        min_l1_dist, max_tries=500, tolerance=5.0)
+            modificiations = hill_descend(TrajectoryNode(orig),
+                                          TrajectoryNode(ANY_PLAN, tuple([1.0] * len(feat_pool[0]))), grid,
+                                          min_l1_dist, max_tries=500, tolerance=5.0)
             new = modificiations[-1].trajectory
             print("min l1 v pool: {}".format(abs(min_l1_dist(modificiations[-1], None) - feat_dim)))
             new_trajs.append(new)
@@ -39,39 +39,39 @@ def sample_diverse(pool, samples_per_orig, grid):
     return new_trajs, np.array(list(map(TrajectoryNode.featurizer, new_trajs)))
 
 
-def sample_neighbors(pool, samples_per_orig, grid):
-    feat_pool = list(map(TrajectoryNode.featurizer, pool))
-    feat_pool = np.array(feat_pool, dtype=np.float)
+def sample_neighbors_for_pool(pool, samples_per, grid, target_distance=0.3):
+    samples_by_orig = []
+    for traj in pool:
+        samples_by_orig.append(sample_neighbors(traj, samples_per, grid, target_distance=target_distance))
+    return samples_by_orig
 
+
+def sample_neighbors(orig, samples, grid, target_distance=0.3):
     new_trajs = []
-    for orig in pool:
-        for i in range(samples_per_orig):
-            traj_feats = TrajectoryNode.featurizer(orig)
+    for i in range(samples):
+        traj_feats = TrajectoryNode.featurizer(orig)
 
-            def mean_l1_dist(node, goal):
-                node_feats = np.array(node.features, dtype=np.float)
-                total = np.linalg.norm(traj_feats - node_feats, 1)
-                # We're targeting "nearby" trajectories
-                return abs(.3 - total.mean())
+        def mean_l1_dist(node, goal):
+            node_feats = np.array(node.features, dtype=np.float)
+            total = np.linalg.norm(traj_feats - node_feats, 1)
+            # We're targeting "nearby" trajectories, so try to drive dist to the target to 0
+            return abs(target_distance - total.mean())
 
-            modificiations = hill_climb(TrajectoryNode(orig),
-                                        TrajectoryNode(ANY_PLAN, tuple([1.0] * len(feat_pool[0]))), grid,
-                                        mean_l1_dist, max_tries=500, tolerance=0.01)
-            new = modificiations[-1].trajectory
-            print("L1 vs current pool: {}".format(mean_l1_dist(modificiations[-1], None) + .2))
-            new_trajs.append(new)
-            feat_pool = np.vstack([feat_pool, np.array(TrajectoryNode.featurizer(new), dtype=np.float)])
-
-    return new_trajs, np.array(list(map(TrajectoryNode.featurizer, new_trajs)))
+        modificiations = hill_descend(TrajectoryNode(orig, None),
+                                      TrajectoryNode(ANY_PLAN, (None,)), grid,
+                                      mean_l1_dist, max_tries=500, tolerance=0.1)
+        new = modificiations[-1].trajectory
+        print("L1 new v orig: {}".format(mean_l1_dist(modificiations[-1], None) + target_distance))
+        new_trajs.append(new)
+    return new_trajs
 
 
 def sample_random_goal_neighbor(pool, samples_per_orig, grid):
-    feat_pool = list(map(TrajectoryNode.featurizer, pool))
-    feat_pool = np.array(feat_pool, dtype=np.float)
-    feat_dim = feat_pool.shape[1]
-    new_trajs = []
+    new_trajs_by_orig = []
     for orig in pool:
+        new_trajs_by_orig.append([])
         orig_feats = TrajectoryNode.featurizer(orig)
+        feat_dim = len(orig_feats)
         for i in range(samples_per_orig):
             sampled = False
             while not sampled:
@@ -96,8 +96,8 @@ def sample_random_goal_neighbor(pool, samples_per_orig, grid):
                     print("lamb: {:.3}".format(lamb))
                     directed_l2 = make_directed_l2(np.eye(feat_dim)[random_dim], lamb)
 
-                    modificiations = hill_climb(TrajectoryNode(orig, orig_feats), goal, grid,
-                                                directed_l2, max_tries=100, tolerance=0.025)
+                    modificiations = hill_descend(TrajectoryNode(orig, orig_feats), goal, grid,
+                                                  directed_l2, max_tries=100, tolerance=0.025)
                     new = modificiations[-1].trajectory
                     new_feats = TrajectoryNode.featurizer(new)
                     result_error = feat_l2(TrajectoryNode(new, new_feats), goal)
@@ -115,7 +115,6 @@ def sample_random_goal_neighbor(pool, samples_per_orig, grid):
                     print("Got it")
                     succeeded = True
                     sampled = True
-                    new_trajs.append(new)
-                    feat_pool = np.vstack([feat_pool, np.array(new_feats, dtype=np.float)])
+                    new_trajs_by_orig[-1].append(new)
 
-    return new_trajs, np.array(list(map(TrajectoryNode.featurizer, new_trajs)))
+    return new_trajs_by_orig

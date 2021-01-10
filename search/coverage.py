@@ -49,13 +49,19 @@ def trajectory_features(goal, grid, plan):
     hook_x = signal.correlate2d(diffs_1, np.array([[1, 0], [0, 1], [-1, 0]]))
     hook_x_count = (abs(hook_x) == [0, 3, 0]).all(-1).sum()
     start_stop = signal.correlate(abs(diffs_1), np.array([[10, 10], [-10, -10]]))
-    start_stop_count = (start_stop[:, 1] == 10).sum()
+    # We always stop at the end, so less one. Exception is degenerate short trajectories
+    start_stop_count = max((start_stop[:, 1] == 10).sum() - 1, 0)
     start_stopiness = start_stop_count * 2 / len(diffs_1)
-    # Each hook template match indicates 3 steps spent "in a turn"
-    hookiness = (hook_x_count + hook_y_count) * 3 / len(diffs_2)
-    # Second diff of 0 means straight-line motion. Count number of rows with this case and sum
-    straight_time = (diffs_2 == [0, 0]).all(-1).sum()
-    straightness = straight_time / len(diffs_2)
+
+    if len(diffs_2) == 0:
+        hookiness = 0
+        straightness = 0
+    else:
+        # Each hook template match indicates 3 steps spent "in a turn"
+        hookiness = (hook_x_count + hook_y_count) * 3 / len(diffs_2)
+        # Second diff of 0 means straight-line motion. Count number of rows with this case and sum
+        straight_time = (diffs_2 == [0, 0]).all(-1).sum()
+        straightness = straight_time / len(diffs_2)
 
     covered_x, covered_y = set([p[0] for p in plan]), set([p[1] for p in plan])
     x_coverage = len(covered_x) / len(grid[0])

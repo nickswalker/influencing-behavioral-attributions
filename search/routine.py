@@ -70,7 +70,7 @@ def astar(start, goal, grid, heuristic=manhattan):
     raise ValueError('No Path Found')
 
 
-def hill_climb(start, goal, grid, heuristic=manhattan, tolerance=8, max_tries=1000):
+def hill_descend(start, goal, grid, heuristic=manhattan, tolerance=8, max_tries=1000, branch_limit=200):
     # The open and closed sets
     frontier = PriorityQueue()
     openset = set()
@@ -106,8 +106,8 @@ def hill_climb(start, goal, grid, heuristic=manhattan, tolerance=8, max_tries=10
             # Loop through the node's children/siblings
             neighbors = current.neighbors(grid)
             # About the practical limit for branching and reasonable search times
-            if len(neighbors) > 200:
-                neighbors = random.sample(neighbors, 200)
+            if len(neighbors) > branch_limit:
+                neighbors = random.sample(neighbors, branch_limit)
             for node in neighbors:
                 # If it is already in the closed set, skip it
                 if node in closedset:
