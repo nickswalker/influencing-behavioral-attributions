@@ -1,9 +1,13 @@
 import ast
 import random
 import re
+import sys
 
 import pandas as pd
 import json
+
+from pytorch_lightning.callbacks import ProgressBarBase
+from tqdm import tqdm
 
 
 def gen_samples(population, n, per_hit):
@@ -47,15 +51,9 @@ def load_demo_pool(file_names):
     return trajectories, prompts
 
 
-def process_turk_files(paths, filter_rejected=True):
-    print("Processing paths: {}".format(str(paths)))
-
-    def drop_trailing_num(name):
-        try:
-            return next(re.finditer(r'[\D\.]*', name)).group(0)
-        except StopIteration:
-            return name
-
+def process_turk_files(paths, filter_rejected=True, traj_file=None):
+    if not isinstance(paths, list):
+        paths = [paths]
     def drop_con_number(name):
         try:
             con_string = next(re.finditer(r'con_\d_', name)).group(0)
@@ -131,6 +129,13 @@ def process_turk_files(paths, filter_rejected=True):
 
     demos.columns = demos.columns.str.replace("Answer.", "", regex=False)
     demos.columns = demos.columns.str.replace("Input.", "", regex=False)
+
+    if traj_file:
+        trajectories, features = load_trajectory_pool(traj_file)
+        # Add feats and traj data
+        condition_ratings["features"] = condition_ratings["id"].apply(lambda x: features[x]).to_numpy()
+        condition_ratings["trajectories"] = condition_ratings["id"].apply(lambda x: trajectories[x])
+
     return condition_ratings, demos, other_data
 
 
@@ -151,3 +156,34 @@ feature_names = ["goal_cov",
                  "start-stop template match"
                  ]
 attributions = ["broken", "clumsy", "competent", "confused", "curious", "efficient", "energetic", "focused", "intelligent", "investigative", "lazy", "lost", "reliable", "responsible"]
+
+
+class LitProgressBar(ProgressBarBase):
+
+    def __init__(self, *args, **kwargs):
+        super(LitProgressBar, self).__init__(*args, **kwargs)
+        self.process_position = 0
+        self.is_disabled = False
+        self.current_epoch = 0
+        self.overall = tqdm(
+            desc='Overall',
+            initial=0,
+            position=(2 * self.process_position),
+            disable=self.is_disabled,
+            leave=True,
+            dynamic_ncols=True,
+            file=sys.stdout,
+            smoothing=0
+        )
+
+    def on_fit_start(self, trainer, pl_module):
+        self.overall.total = trainer.max_epochs
+
+    def on_train_epoch_end(self, trainer, pl_module,x):
+        self.overall.update(1)
+        self.overall.set_postfix(trainer.progress_bar_dict)
+
+    def on_validation_epoch_end(self, trainer, pl_module):
+        # self.overall.update(1)
+        # self.overall.set_postfix(trainer.progress_bar_dict)
+        pass

@@ -1,13 +1,11 @@
 import numpy as np
-from joblib import dump
+
 from sklearn import linear_model
-from sklearn.metrics import confusion_matrix
-from sklearn.model_selection import train_test_split
+
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
+from sklearn.neural_network import MLPClassifier, MLPRegressor
 from sklearn.svm import SVC
-
-from models.plotting import make_conf_mat_plots
 
 
 def fit_lin_reg(condition_ratings, variable_names):
@@ -66,6 +64,12 @@ def fit_lin_reg(condition_ratings, variable_names):
     # print(gpr.predict(x[:1, :], return_std=True))
 
 
+def fit_log_reg(x,y):
+    model = linear_model.LogisticRegressionCV(max_iter=3000)
+    model.fit(x, y)
+    return model
+
+
 def bin_likert(data):
     data[data < 3] = 0
     data[data == 3] = 1
@@ -83,7 +87,24 @@ def bin_factor_score(data):
     return data.astype(int)
 
 
-def fit_classification(x, y):
-    clf = make_pipeline(StandardScaler(), SVC(probability=False, class_weight="balanced"))
+def fit_mlp(x, y):
+    clf = make_pipeline(StandardScaler(), MLPClassifier(random_state=0, solver="lbfgs",hidden_layer_sizes=[20,20], activation="relu", max_iter=3000))
     clf.fit(x, y)
     return clf
+
+def fit_mlp_regressor(x, y):
+    clf = make_pipeline(StandardScaler(), MLPRegressor(random_state=0, solver="lbfgs", hidden_layer_sizes=[15,15], activation="relu", max_iter=3000))
+    clf.fit(x, y)
+    return clf
+
+
+def fit_svm(x, y):
+    clf = make_pipeline(StandardScaler(), SVC(random_state=0, probability=False, class_weight="balanced"))
+    clf.fit(x, y)
+    return clf
+
+def fit_knn(x,y):
+    from sklearn.neighbors import KNeighborsClassifier
+    neigh = KNeighborsClassifier(n_neighbors=3)
+    neigh.fit(x, y)
+    return neigh
