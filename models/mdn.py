@@ -1,6 +1,7 @@
 """A module for a mixture density network layer
 For more info on MDNs, see _Mixture Desity Networks_ by Bishop, 1994.
 """
+import scipy
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -80,14 +81,29 @@ def mdn_loss(pi, sigma, mu, target):
     nll = -torch.log(torch.sum(prob, dim=1))
     return torch.mean(nll)
 
+
 def mog_prob(pi, sigma, mu, target):
     prob = pi * gaussian_probability(sigma, mu, target)
     return torch.sum(prob, dim=1)
+
 
 def sample_mog_n(n, pi, sigma, mu):
     all = [sample_mog(pi, sigma, mu) for _ in range(n)]
     all = [torch.unsqueeze(x,1) for x in all]
     return torch.cat(all,1)
+
+def mog_mean(pi, mu):
+    return torch.sum(pi @ mu, 1)
+
+def mog_mode(pi, sigma, mu):
+    from scipy import optimize
+    import numpy as np
+    mode = np.zeros([pi.shape[0]])
+    for i in range(pi.shape[0]):
+        def nmog_prob_x(x):
+            return -mog_prob(pi[i,:].unsqueeze(0), sigma[i].unsqueeze(0), mu[i].unsqueeze(0), torch.Tensor(x)).detach().numpy()
+        mode[i] = scipy.optimize.brute(nmog_prob_x, [(-3,3)])
+    return mode
 
 def sample_mog(pi, sigma, mu):
     """Draw samples from a MoG.

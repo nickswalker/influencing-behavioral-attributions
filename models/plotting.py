@@ -160,3 +160,16 @@ def make_mog(name, pi, sigma, mu, true_points=None):
     ax.set_xlabel("Factor Scores")
     ax.set_ylim([-0.05, 3.0])
     return fig
+
+def make_acc_over_iteration(acc_by_factor):
+    num_factors = 3
+    num_iterations = 3
+    labels = ["competent", "broken","curious"]
+    for i in range(num_factors):
+        plt.errorbar(np.arange(0, num_iterations), acc_by_factor[i].mean(0), yerr=acc_by_factor[i].std(0) / 2, label=labels[i])
+    plt.gca().set_xlabel("Iteration")
+    plt.gca().set_ylabel("Accuracy")
+    plt.legend()
+    plt.gca().set_ylim((.2, .6))
+    plt.gca().set_xticks(np.arange(0, 3))
+    return plt.gcf()

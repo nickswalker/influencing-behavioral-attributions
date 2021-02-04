@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning.loggers import TensorBoardLogger
-from torch.utils.data import TensorDataset, DataLoader
+from torch.utils.data import TensorDataset, DataLoader, Dataset
 
 from models import mdn
 from models.mdn import sample_mog_n
@@ -69,12 +69,27 @@ class LitMDN(pl.LightningModule):
         items["val_loss"] = f"{self.trainer.logged_metrics['val_loss']:.3g}"
         return items
 
+def collate_fn_padd(batch):
+    '''
+    Padds batch of variable length
+
+    note: it converts things ToTensor manually here since the ToTensor transform
+    assume it takes in images rather than arbitrary tensors.
+    '''
+    lengths = torch.tensor([ x.shape[0] for x, _ in batch])
+
+    x = [ torch.Tensor(x) for x, y in batch]
+    y = torch.stack([y for _, y in batch])
+    x = torch.nn.utils.rnn.pad_sequence(x, padding_value=-3)
+
+    mask = (x != -3)
+    return x, lengths, mask, y
 
 def train_mdn(x, y, x_val, y_val, x_test, y_test, name=None):
     if name is None:
         name = "mdn"
     # initialize the model
-    module = LitMDN(in_features=11, out_features=3, hidden_size=11, gaussians=3)
+    module = LitMDN(in_features=5, out_features=3, hidden_size=11, gaussians=3)
     y = y[["factor0", "factor1", "factor2"]].to_numpy()
     y_val = y_val[["factor0", "factor1", "factor2"]].to_numpy()
     y_test = y_test[["factor0", "factor1", "factor2"]].to_numpy()
@@ -104,19 +119,5 @@ def train_mdn(x, y, x_val, y_val, x_test, y_test, name=None):
     # trainer.test(module, DataLoader(test_data), verbose=False)[0]
     results = trainer.test(best_validation, DataLoader(test_data), verbose=False)[0]
 
-    # sample new points from the trained model
-    pi, sigma, mu = best_validation.forward(test_data.tensors[0])
-    samples = torch.zeros([len(y_test), 1000, 3])
-    samples[:, :, 0] = sample_mog_n(1000, pi[:, 0, :], sigma[:, 0, :], mu[:, 0, :]).squeeze()
-    samples[:, :, 1] = sample_mog_n(1000, pi[:, 1, :], sigma[:, 1, :], mu[:, 1, :]).squeeze()
-    samples[:, :, 2] = sample_mog_n(1000, pi[:, 2, :], sigma[:, 2, :], mu[:, 2, :]).squeeze()
 
-    import pandas as pd
-    for i in range(len(x_test)):
-        truth_i = x_test["uuid"] == x_test["uuid"].iloc[i]
-        truth_y = y_test[truth_i]
-        # fig = make_density("test", pd.DataFrame(pd.DataFrame(samples[0].detach().numpy())), true_points=truth_y)
-        # fig.show()
-        fig = make_mog(f"{name} traj={x_test['uuid'].iloc[i]}", pi[i], sigma[i], mu[i], true_points=truth_y)
-        fig.show()
-    return results
+    return results, best_validation

@@ -4,6 +4,7 @@ import os
 import random
 
 import pandas as pd
+import torch
 from factor_analyzer import FactorAnalyzer, ModelSpecificationParser, ConfirmatoryFactorAnalyzer
 from sklearn.experimental import enable_iterative_imputer  # noqa
 
@@ -12,10 +13,28 @@ from sklearn.impute import IterativeImputer
 import numpy as np
 
 from sklearn.model_selection import GroupShuffleSplit
+from torch.utils.data import TensorDataset
 
+from models.mdn import mog_mode, mog_mean
 from models.nn import train_mdn
+from models.plotting import make_mog
 from models.simple import fit_svm, bin_factor_score, bin_likert
 from models.util import process_turk_files, question_names
+from search.util import load_map
+
+
+def make_mog_test_plots(model, x_test, y_test, model_name=""):
+    y_test = y_test[["factor0", "factor1", "factor2"]].to_numpy()
+    test_data = TensorDataset(torch.from_numpy(np.vstack(x_test["features"])).float(), torch.from_numpy(y_test).float())
+    pi, sigma, mu = model.forward(test_data.tensors[0])
+
+    for i in range(len(x_test)):
+        truth_i = x_test["uuid"] == x_test["uuid"].iloc[i]
+        truth_y = y_test[truth_i]
+        fig = make_mog(f"{model_name} traj={x_test['uuid'].iloc[i]}", pi[i], sigma[i], mu[i], true_points=truth_y)
+        fig.show()
+        return
+
 
 random.seed(0)
 np.random.seed(0)
@@ -64,69 +83,201 @@ cfa = ConfirmatoryFactorAnalyzer(model_spec, 42)
 cfa_res = cfa.fit(condition_ratings[question_names])"""
 
 
-# factor_score_weights = pd.DataFrame(analysis.loadings_.T, columns=question_names)
-# We'll repeat this in a kind of full process cross validation
-acc_by_factor = [[],[],[]]
-mdn_metrics = [[],[],[]]
-all_metrics = [[],[],[]]
-for random_state in range(100):
-    x, x_test, y, y_test = pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-    for i, data in enumerate(condition_ratings):
-        x_n = data[["features", "uuid"]]
-        y_n = data[question_names + factor_names].copy()
+def cross_validate_svm():
+    acc_by_factor = [[], [], []]
+    mdn_metrics = [[], [], []]
+    all_metrics = [[], [], []]
+    for random_state in range(100):
+        x, x_test, y, y_test = pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        for i, data in enumerate(condition_ratings):
+            x_n = data[["features", "uuid"]]
+            y_n = data[question_names + factor_names].copy()
 
-        if i == 0:
+            if i == 0:
+                gss = GroupShuffleSplit(n_splits=1, test_size=0.3, random_state=random_state)
+                train_i, test_i = next(gss.split(x_n, y_n, groups=x_n["uuid"]))
+
+                x = pd.concat([x, x_n.iloc[train_i]])
+                x_test = pd.concat([x_test, x_n.iloc[test_i]])
+                y = pd.concat([y, y_n.iloc[train_i]])
+                y_test = pd.concat([y_test, y_n.iloc[test_i]])
+
+            else:
+                x = pd.concat([x, x_n])
+                y = pd.concat([y, y_n])
+            # Bin the data
+            y_bin = y.copy()
+            y_test_bin = y_test.copy()
+            y_bin[question_names] = bin_likert(y[question_names].copy())
+            y_test_bin[question_names] = bin_likert(y_test[question_names].copy())
+
+            y_bin[factor_names] = bin_factor_score(y[factor_names].copy())
+            y_test_bin[factor_names] = bin_factor_score(y_test[factor_names].copy())
+
+            # Evaluate classification accuracy for each factor
+            for k, factor_name in enumerate(factor_names):
+                clf = fit_svm(np.vstack(x["features"]), y_bin[factor_name])
+                acc_by_factor[k].append(clf.score(np.vstack(x_test["features"]), y_test_bin[factor_name].to_numpy()))
+
+    for i, acc in enumerate(acc_by_factor):
+        acc_by_factor[i] = np.array(acc).reshape(-1, 3)
+
+
+def cross_validate_mdn():
+    mdn_metrics = [[], [], []]
+    all_metrics = [[], [], []]
+    models = [[],[],[]]
+    for random_state in range(15):
+        x, x_test, y, y_test = pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        for i, data in enumerate(condition_ratings):
+            x_n = data[["features", "uuid"]]
+            y_n = data[question_names + factor_names].copy()
+
+            if i == 0:
+                gss = GroupShuffleSplit(n_splits=1, test_size=0.3, random_state=random_state)
+                train_i, test_i = next(gss.split(x_n, y_n, groups=x_n["uuid"]))
+
+                x = pd.concat([x, x_n.iloc[train_i]])
+                x_test = pd.concat([x_test, x_n.iloc[test_i]])
+                y = pd.concat([y, y_n.iloc[train_i]])
+                y_test = pd.concat([y_test, y_n.iloc[test_i]])
+
+            else:
+                x = pd.concat([x, x_n])
+                y = pd.concat([y, y_n])
+            # Bin the data
+
             gss = GroupShuffleSplit(n_splits=1, test_size=0.3, random_state=random_state)
-            train_i, test_i = next(gss.split(x_n, y_n, groups=x_n["uuid"]))
+            train_i, val_i = next(gss.split(x, y, groups=x["uuid"]))
+            x_train, y_train, x_val, y_val = x.iloc[train_i], y.iloc[train_i], x.iloc[val_i], y.iloc[val_i]
 
-            x = pd.concat([x, x_n.iloc[train_i]])
-            x_test = pd.concat([x_test, x_n.iloc[test_i]])
-            y = pd.concat([y, y_n.iloc[train_i]])
-            y_test = pd.concat([y_test, y_n.iloc[test_i]])
+            name = f"mdn_{random_state}_{i}"
+            print(name)
+            mdn_res, best_model = train_mdn(x, y, x_val, y_val, x_test, y_test, name=name)
 
-        else:
-            x = pd.concat([x, x_n])
-            y = pd.concat([y, y_n])
-        # Bin the data
-        y_bin = y.copy()
-        y_test_bin = y_test.copy()
-        y_bin[question_names] = bin_likert(y[question_names].copy())
-        y_test_bin[question_names] = bin_likert(y_test[question_names].copy())
+            mdn_metrics[i].append(mdn_res["test_loss"])
+            all_metrics[i].append([mdn_res[f"test_loss_{i}"] for i in range(3)])
+            print(mdn_metrics)
+            print(all_metrics)
 
-        y_bin[factor_names] = bin_factor_score(y[factor_names].copy())
-        y_test_bin[factor_names] = bin_factor_score(y_test[factor_names].copy())
+            #make_mog_test_plots(best_model, x_test, y_test)
+    print("done")
 
-        # Evaluate classification accuracy for each factor
-        fac_acc = []
-        for k, factor_name in enumerate(factor_names):
-            clf = fit_svm(np.vstack(x["features"]), y_bin[factor_name])
-            acc_by_factor[k].append(clf.score(np.vstack(x_test["features"]), y_test_bin[factor_name].to_numpy()))
+
+def ensemble_mdn():
+    all_metrics = []
+    models = []
+    modes = []
+    means = []
+    x_all = pd.concat([data[["features", "uuid"]] for data in condition_ratings])
+    y_all = pd.concat([data[question_names + factor_names].copy() for data in condition_ratings])
+
+    gss = GroupShuffleSplit(n_splits=1, test_size=0.3, random_state=0)
+    train_i, test_i = next(gss.split(x_all, y_all, groups=x_all["uuid"]))
+
+    x = x_all.iloc[train_i]
+    x_test = x_all.iloc[test_i]
+    y = y_all.iloc[train_i]
+    y_test = y_all.iloc[test_i]
+
+    for random_state in range(50):
 
         gss = GroupShuffleSplit(n_splits=1, test_size=0.3, random_state=random_state)
         train_i, val_i = next(gss.split(x, y, groups=x["uuid"]))
         x_train, y_train, x_val, y_val = x.iloc[train_i], y.iloc[train_i], x.iloc[val_i], y.iloc[val_i]
 
-        name = f"mdn_{random_state}_{i}"
+        name = f"mdn_{random_state}"
         print(name)
-        mdn_res = train_mdn(x,y, x_val, y_val, x_test, y_test, name=name)
+        mdn_res, best_model = train_mdn(x, y, x_val, y_val, x_test, y_test, name=name)
 
-        mdn_metrics[i].append(mdn_res["test_loss"])
-        all_metrics[i].append([mdn_res[f"test_loss_{i}"] for i in range(3)])
-        print(mdn_metrics)
+        all_metrics.append([mdn_res[f"test_loss_{i}"] for i in range(3)])
         print(all_metrics)
 
-for i, acc in enumerate(acc_by_factor):
-    acc_by_factor[i] = np.array(acc).reshape(-1,3)
+        y_test_np = y_test[["factor0", "factor1", "factor2"]].to_numpy()
+        test_data = TensorDataset(torch.from_numpy(np.vstack(x_test["features"])).float(),
+                                  torch.from_numpy(y_test_np).float())
+        pi, sigma, mu = best_model.forward(test_data.tensors[0])
+
+        mode = mog_mode(pi[0], sigma[0], mu[0])
+        mean = mog_mean(pi[0], mu[0])
+        modes.append(mode)
+        means.append(mean.detach().numpy())
+        make_mog_test_plots(best_model, x_test, y_test)
+        # TODO: Check modes over multiple iterations. Calculate statistics on them. See if regular mean changes much
+    mean_mode = np.array(modes).mean(0)
+    std_mode = np.array(modes).std(0)
+    print(mean_mode, std_mode)
+    mean_mode = np.array(means).mean(0)
+    std_mode = np.array(means).std(0)
+    print(mean_mode, std_mode)
+    print("done")
 
 
-from matplotlib import pyplot as plt, ticker
+def diff_featurize(plan, goal):
+    points = np.array(plan, dtype=np.int)
+    diffs_1 = np.diff(points, axis=0)
+    diffs_2 = np.diff(points, 2, axis=0)
+    diffs_2 = np.pad(diffs_2, ((1,0), (0,0)), mode="constant")
+    in_goal = np.array([1 if p in goal else 0 for p in plan][1:]).reshape(-1, 1)
+    return np.hstack([diffs_1,diffs_2, in_goal])
 
-plt.errorbar([0,1,2],acc_by_factor[0].mean(0),yerr=acc_by_factor[0].std(0)/2, label="competent")
-plt.errorbar([0,1,2],acc_by_factor[1].mean(0),yerr=acc_by_factor[1].std(0)/2, label="broken")
-plt.errorbar([0,1,2],acc_by_factor[2].mean(0),yerr=acc_by_factor[2].std(0)/2, label="curious")
-plt.gca().set_xlabel("Iteration")
-plt.gca().set_ylabel("Accuracy")
-plt.legend()
-plt.gca().set_ylim((.2, .6))
-plt.gca().set_xticks(np.arange(0,3))
-plt.show()
+def fit_traj_lstm():
+    all_metrics = []
+    models = []
+    modes = []
+    means = []
+    x_all = pd.concat([data[["trajectories", "uuid"]] for data in condition_ratings])
+
+    trajectories = x_all["trajectories"].to_numpy()
+
+    grid, bedroom = load_map("../interface/assets/map32.tmx")
+    x_all["featurized"] = x_all["trajectories"].apply(lambda x: diff_featurize(x, bedroom))
+    y_all = pd.concat([data[question_names + factor_names].copy() for data in condition_ratings])
+
+    gss = GroupShuffleSplit(n_splits=1, test_size=0.3, random_state=0)
+    train_i, test_i = next(gss.split(x_all, y_all, groups=x_all["uuid"]))
+
+    x = x_all.iloc[train_i]
+    x_test = x_all.iloc[test_i]
+    y = y_all.iloc[train_i]
+    y_test = y_all.iloc[test_i]
+
+    for random_state in range(50):
+
+        gss = GroupShuffleSplit(n_splits=1, test_size=0.3, random_state=random_state)
+        train_i, val_i = next(gss.split(x, y, groups=x["uuid"]))
+        x_train, y_train, x_val, y_val = x.iloc[train_i], y.iloc[train_i], x.iloc[val_i], y.iloc[val_i]
+
+        name = f"mdn_{random_state}"
+        print(name)
+        mdn_res, best_model = train_mdn(x, y, x_val, y_val, x_test, y_test, name=name)
+
+        all_metrics.append([mdn_res[f"test_loss_{i}"] for i in range(3)])
+        print(sum(all_metrics[-1]))
+
+        y_test_np = y_test[["factor0", "factor1", "factor2"]].to_numpy()
+        test_data = TensorDataset(torch.from_numpy(np.vstack(x_test["features"])).float(),
+                                  torch.from_numpy(y_test_np).float())
+        pi, sigma, mu = best_model.forward(test_data.tensors[0])
+
+        mode = mog_mode(pi[0], sigma[0], mu[0])
+        mean = mog_mean(pi[0], mu[0])
+        modes.append(mode)
+        means.append(mean.detach().numpy())
+        make_mog_test_plots(best_model, x_test, y_test)
+        # TODO: Check modes over multiple iterations. Calculate statistics on them. See if regular mean changes much
+    mean_mode = np.array(modes).mean(0)
+    std_mode = np.array(modes).std(0)
+    print(mean_mode, std_mode)
+    mean_mode = np.array(means).mean(0)
+    std_mode = np.array(means).std(0)
+    print(mean_mode, std_mode)
+    print("done")
+
+fit_traj_lstm()
+cross_validate_mdn()
+ensemble_mdn()
+# factor_score_weights = pd.DataFrame(analysis.loadings_.T, columns=question_names)
+# We'll repeat this in a kind of full process cross validation
+
+
