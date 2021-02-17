@@ -16,9 +16,10 @@ import numpy as np
 
 class LitMDN(pl.LightningModule):
 
-    def __init__(self, in_features, out_features, hidden_size, gaussians):
+    def __init__(self, in_features, out_features, hidden_size, gaussians, noise_regularization=0.0):
         super().__init__()
         self.save_hyperparameters()
+        self.noise_regularization = noise_regularization
         self.features = nn.Sequential(nn.Linear(in_features, hidden_size), nn.Tanh())
         self.module_list = nn.ModuleList([mdn.MDN(hidden_size, 1, gaussians) for _ in range(out_features)])
 
@@ -32,6 +33,9 @@ class LitMDN(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         x, y = batch
+        if self.noise_regularization != 0.0:
+            x += torch.normal(0, self.noise_regularization, x.shape)
+            y += torch.normal(0, self.noise_regularization, y.shape)
         feats = self.features(x)
         out = [m(feats) for m in self.module_list]
         loss = [mdn.mdn_loss(*params, y[:, i].unsqueeze(1)) for i, params in enumerate(out)]
@@ -64,7 +68,6 @@ class LitMDN(pl.LightningModule):
         return optimizer
 
     def get_progress_bar_dict(self):
-        # don't show the version number
         items = super().get_progress_bar_dict()
         items["val_loss"] = f"{self.trainer.logged_metrics['val_loss']:.3g}"
         return items
@@ -89,7 +92,7 @@ def train_mdn(x, y, x_val, y_val, x_test, y_test, name=None):
     if name is None:
         name = "mdn"
     # initialize the model
-    module = LitMDN(in_features=5, out_features=3, hidden_size=11, gaussians=3)
+    module = LitMDN(in_features=11, out_features=3, hidden_size=5, gaussians=3, noise_regularization=0.03)
     y = y[["factor0", "factor1", "factor2"]].to_numpy()
     y_val = y_val[["factor0", "factor1", "factor2"]].to_numpy()
     y_test = y_test[["factor0", "factor1", "factor2"]].to_numpy()
