@@ -148,10 +148,9 @@ def make_density(name, data, true_points=None):
 
 def make_mog(name, pi, sigma, mu, true_points=None):
     fig, ax = plt.subplots(1, 1, figsize=(6, 3.5))
-    xs = np.vstack([np.linspace(-3,3, 200) for _ in range(pi.shape[1])]).swapaxes(1,0)
-    xs = np.linspace(-3,3, 200)
+    xs = np.linspace(-3,3, 200).reshape([-1, 1])
     for i in range(pi.shape[0]):
-        plt.plot(xs, mog_prob(pi[i].repeat(200,1), sigma[i].repeat(200,1,1), mu[i].repeat(200,1,1), torch.Tensor(xs).unsqueeze(1)).detach().numpy(), "-", label=["competent", "broken", "curious"][i])
+        plt.plot(xs, mog_prob(pi[i].repeat(200,1), sigma[i].repeat(200,1,1), mu[i].repeat(200,1,1), torch.Tensor(xs)).detach().numpy(), "-", label=["competent", "broken", "curious"][i])
     if true_points is not None:
         for i in range(true_points.shape[1]):
             plt.scatter(true_points[:, i], np.zeros(len(true_points)) + i * 0.05, marker="x")
