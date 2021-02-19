@@ -21,15 +21,11 @@ class LitMDN(pl.LightningModule):
         self.save_hyperparameters()
         self.noise_regularization = noise_regularization
         self.features = nn.Sequential(nn.Linear(in_features, hidden_size), nn.Tanh())
-        self.module_list = nn.ModuleList([mdn.MDN(hidden_size, 1, gaussians) for _ in range(out_features)])
+        self.mdn = mdn.MDN(hidden_size, out_features, gaussians)
 
     def forward(self, x):
         feats = self.features(x)
-        out = [m(feats) for m in self.module_list]
-        pi = torch.stack([p[0] for p in out], dim=1)
-        sigma = torch.stack([p[1] for p in out], dim=1)
-        mu = torch.stack([p[2] for p in out], dim=1)
-        return pi, sigma, mu
+        return self.mdn(feats)
 
     def training_step(self, batch, batch_idx):
         x, y = batch
@@ -37,40 +33,38 @@ class LitMDN(pl.LightningModule):
             x += torch.normal(0, self.noise_regularization, x.shape)
             y += torch.normal(0, self.noise_regularization, y.shape)
         feats = self.features(x)
-        out = [m(feats) for m in self.module_list]
-        loss = [mdn.mdn_loss(*params, y[:, i].unsqueeze(1)) for i, params in enumerate(out)]
-        loss = torch.stack(loss).sum()
+        out = self.mdn(feats)
+        loss = mdn.mdn_loss(*out, y)
         self.log('train_loss', loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
         feats = self.features(x)
-        out = [m(feats) for m in self.module_list]
-        loss = [mdn.mdn_loss(*params, y[:, i]) for i, params in enumerate(out)]
-        loss = torch.stack(loss).sum()
+        out = self.mdn(feats)
+        loss = mdn.mdn_loss(*out, y)
         self.log('val_loss', loss)
         return loss
 
     def test_step(self, batch, batch_idx):
         x, y = batch
         feats = self.features(x)
-        out = [m(feats) for m in self.module_list]
-        loss = [mdn.mdn_loss(*params, y[:, i]) for i, params in enumerate(out)]
-        sum_loss = torch.stack(loss).sum()
-        self.log('test_loss', sum_loss)
-        for i in range(len(loss)):
-            self.log(f'test_loss_{i}', loss[i])
+        out = self.mdn(feats)
+        loss = mdn.mdn_loss(*out, y)
+        self.log('test_loss', loss)
         return loss
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters())
+        # Our model is really small, but LBFGS is unstable for its loss landscape
+        #optimizer = torch.optim.LBFGS(self.parameters())
         return optimizer
 
     def get_progress_bar_dict(self):
         items = super().get_progress_bar_dict()
         items["val_loss"] = f"{self.trainer.logged_metrics['val_loss']:.3g}"
         return items
+
 
 def collate_fn_padd(batch):
     '''
@@ -92,7 +86,7 @@ def train_mdn(x, y, x_val, y_val, x_test, y_test, name=None):
     if name is None:
         name = "mdn"
     # initialize the model
-    module = LitMDN(in_features=11, out_features=3, hidden_size=5, gaussians=3, noise_regularization=0.03)
+    module = LitMDN(in_features=11, out_features=3, hidden_size=5, gaussians=4, noise_regularization=0.15)
     y = y[["factor0", "factor1", "factor2"]].to_numpy()
     y_val = y_val[["factor0", "factor1", "factor2"]].to_numpy()
     y_test = y_test[["factor0", "factor1", "factor2"]].to_numpy()
@@ -108,19 +102,18 @@ def train_mdn(x, y, x_val, y_val, x_test, y_test, name=None):
     early_stop_callback = EarlyStopping(
         monitor='val_loss',
         min_delta=0.00,
-        patience=5000,
+        patience=200,
         verbose=False,
         mode='min'
     )
     progress = LitProgressBar()
     # progress_bar_refresh_rate=0
     logger = TensorBoardLogger('train_logs', name=name)
-    trainer = pl.Trainer(deterministic=True, max_epochs=2000,
+    trainer = pl.Trainer(deterministic=True, max_epochs=10000,
                          callbacks=[checkpoint_callback, early_stop_callback, progress], val_check_interval=1.0, logger=logger)
     trainer.fit(module, DataLoader(train_data, batch_size=32, shuffle=True), DataLoader(val_data))
     best_validation = LitMDN.load_from_checkpoint(checkpoint_path=checkpoint_callback.best_model_path)
     # trainer.test(module, DataLoader(test_data), verbose=False)[0]
     results = trainer.test(best_validation, DataLoader(test_data), verbose=False)[0]
 
-
-    return results, best_validation
+    return results, best_validation, checkpoint_callback.best_model_path

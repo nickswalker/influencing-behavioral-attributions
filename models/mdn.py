@@ -2,6 +2,7 @@
 For more info on MDNs, see _Mixture Desity Networks_ by Bishop, 1994.
 """
 import itertools
+import sys
 
 import scipy
 import torch
@@ -99,19 +100,28 @@ def sample_mog_n(n, pi, sigma, mu):
 
 
 def mog_mean(pi, mu):
-    return torch.sum(pi @ mu, 1)
+    """
+
+    :param pi:  a probability vector
+    :param mu: GxO
+    :return:
+    """
+    return pi @ mu
 
 
 def mog_mode(pi, sigma, mu):
     from scipy import optimize
     import numpy as np
-    mode = np.zeros([pi.shape[0]])
-    for i in range(pi.shape[0]):
+    dims = mu.shape[-1]
+    mode = np.zeros([dims])
+    for d in range(dims):
+        mog_d = marginal_mog((pi, sigma, mu), d)
+        batch_mog_d = batch_mog(mog_d, 1)
         def nmog_prob_x(x):
-            return -mog_prob(pi[i, :].unsqueeze(0), sigma[i].unsqueeze(0), mu[i].unsqueeze(0),
+            return -mog_prob(*batch_mog_d,
                              torch.Tensor(x)).detach().numpy()
 
-        mode[i] = scipy.optimize.brute(nmog_prob_x, [(-3, 3)])
+        mode[d] = scipy.optimize.brute(nmog_prob_x, [(-3, 3)])
     return mode
 
 
@@ -119,21 +129,20 @@ def mog_kl(mog1, mog2):
     x = np.linspace(-3, 3, 120)
     x_batch = torch.Tensor(x.reshape([-1, 1]))
     n = len(x)
-    mog1 = mog1[0].repeat(n, 1), mog1[1].repeat(n, 1, 1), mog1[2].repeat(n, 1, 1)
-    mog2 = mog2[0].repeat(n, 1), mog2[1].repeat(n, 1, 1), mog2[2].repeat(n, 1, 1)
+    mog1 = batch_mog(mog1, n)
+    mog2 = batch_mog(mog2, n)
 
     y1 = mog_prob(*mog1, x_batch).detach().numpy().flatten()
     y2 = mog_prob(*mog2, x_batch).detach().numpy().flatten()
     kl = kl_div(x, y1, y2)
-    kl_2 = kl_div(x, y2, y1)
-    return kl + kl_2 / 2.0, kl, kl_2
+    return kl
 
 def mog_wasserstein(mog1, mog2):
     x = np.linspace(-3, 3, 120)
     x_batch = torch.Tensor(x.reshape([-1, 1]))
     n = len(x)
-    mog1 = mog1[0].repeat(n, 1), mog1[1].repeat(n, 1, 1), mog1[2].repeat(n, 1, 1)
-    mog2 = mog2[0].repeat(n, 1), mog2[1].repeat(n, 1, 1), mog2[2].repeat(n, 1, 1)
+    mog1 = batch_mog(mog1, n)
+    mog2 = batch_mog(mog2, n)
 
     y1 = mog_prob(*mog1, x_batch).detach().numpy().flatten()
     y2 = mog_prob(*mog2, x_batch).detach().numpy().flatten()
@@ -145,7 +154,7 @@ def mog_entropy(pi, sigma, mu):
     x = np.linspace(-3, 3, 120)
     x_batch = torch.Tensor(x.reshape([-1, 1]))
     n = len(x)
-    mog1 = pi.repeat(n, 1), sigma.repeat(n, 1, 1), mu.repeat(n, 1, 1)
+    mog1 = batch_mog((pi, sigma, mu), n)
 
     y1 = mog_prob(*mog1, x_batch).detach().numpy().flatten()
     y2 = np.full([n], 1.0 / 6.0)
@@ -153,9 +162,36 @@ def mog_entropy(pi, sigma, mu):
 
 
 def kl_div(domain, dist1, dist2):
+    eps = 0.0000001
+    if min(dist1) == 0.0:
+        smoothed1 = dist1 + eps
+        smoothed1 /= np.trapz(smoothed1, domain)
+        kl = kl_div(domain, smoothed1, dist2)
+        return kl
+    if min(dist2) == 0.0:
+        smoothed2 = dist2 + eps
+        smoothed2 /= np.trapz(smoothed2, domain)
+        kl = kl_div(domain, dist1, smoothed2)
+        return kl
     kl = np.trapz(dist1 * np.log2(dist1 / dist2), domain)
+
     return kl
 
+
+def batch_mog(mog, n):
+    pi, sigma, mu = mog
+    return pi.repeat(n, 1), sigma.repeat(n, 1, 1), mu.repeat(n, 1, 1)
+
+
+def marginal_mog(mog, d):
+    pi, sigma, mu = mog
+    marginal_mu = mu[:, [d]]
+    marginal_sigma = sigma[:, [d]]
+    return pi, marginal_sigma, marginal_mu
+
+
+def uniform(width, samples):
+    return np.full([samples], 1.0 / width)
 
 def mog_jensen_shanon(mogs):
     # Params are assumed to be batched
@@ -164,14 +200,14 @@ def mog_jensen_shanon(mogs):
     x = np.linspace(-3, 3, 120)
     x_batch = torch.Tensor(x.reshape([-1, 1]))
     n = len(x)
-    for pi, sigma, mu in mogs:
-        mog = pi.repeat(n, 1), sigma.repeat(n, 1, 1), mu.repeat(n, 1, 1)
+    for mog in mogs:
+        mog = batch_mog(mog, n)
         mog_prob_i = mog_prob(*mog, x_batch).detach().numpy().flatten()
         probs.append(mog_prob_i)
-        entropies.append(kl_div(x, mog_prob_i, np.full([1, n], 1.0 / 6.0)))
+        entropies.append(kl_div(x, mog_prob_i, uniform(6.0, 120)))
 
     mixture_prob = np.array(probs).sum(0) / len(probs)
-    mixture_entropy = kl_div(x, mixture_prob, np.full([n], 1.0 / 6.0))
+    mixture_entropy = kl_div(x, mixture_prob, uniform(6.0,120))
 
     return mixture_entropy - (sum(entropies) / len(entropies))
 
@@ -209,19 +245,19 @@ def ens_uncertainty_kl(models, samples):
     for model in models:
         out.append(model.forward(samples))
 
-    kl_div = [[[], [], []] for _ in range(len(samples))]
     ind = list(range(len(out)))
-    dims = out[0][0].shape[-1]
+    dims = out[0][1].shape[-1]
+    kl_div = [[[] for _ in range(dims)] for _ in range(len(samples))]
     # Iterate pairs of models
     for i, j in itertools.product(ind, ind):
         if i == j:
             continue
         m0, m1 = out[i], out[j]
         for k in range(len(samples)):
+            m0k = m0[0][k], m0[1][k], m0[2][k]
+            m1k = m1[0][k], m1[1][k], m1[2][k]
             for d in range(dims):
-                m0k = m0[0][k][d], m0[1][k][d], m0[2][k][d]
-                m1k = m1[0][k][d], m1[1][k][d], m1[2][k][d]
-                kl_div[k][d].append(mog_kl(m0k, m1k)[0])
+                kl_div[k][d].append(mog_kl(marginal_mog(m0k, d), marginal_mog(m1k, d)))
 
     # Mean over all pairs of distances. Out is uncertainty per dimension per sample
     return np.array(kl_div).mean(2)
@@ -235,17 +271,17 @@ def ens_uncertainty_w(models, samples):
 
     w_dist = [[[], [], []] for _ in range(len(samples))]
     ind = list(range(len(out)))
-    dims = out[0][0].shape[-1]
+    dims = out[0][1].shape[-1]
     # Iterate pairs of models
     for i, j in itertools.product(ind, ind):
         if i == j:
             continue
         m0, m1 = out[i], out[j]
         for k in range(len(samples)):
+            m0k = m0[0][k], m0[1][k], m0[2][k]
+            m1k = m1[0][k], m1[1][k], m1[2][k]
             for d in range(dims):
-                m0k = m0[0][k][d], m0[1][k][d], m0[2][k][d]
-                m1k = m1[0][k][d], m1[1][k][d], m1[2][k][d]
-                w_dist[k][d].append(mog_wasserstein(m0k, m1k))
+                w_dist[k][d].append(mog_wasserstein(marginal_mog(m0k, d), marginal_mog(m1k, d)))
 
     # Mean over all pairs of distances. Out is uncertainty per dimension per sample
     return np.array(w_dist).mean(2)
@@ -255,11 +291,12 @@ def ens_uncertainty_js(models, samples):
     out = []
     for model in models:
         out.append(model.forward(samples))
-    dims = out[0][0].shape[-1]
+    dims = out[0][1].shape[-1]
     unc = [[] for _ in range(len(samples))]
     for i in range(len(samples)):
+        mogs_per_sample = [(pi[i], sigma[i], mu[i]) for pi, sigma, mu in out]
         for d in range(dims):
-            mogs_per_sample = [(model_out[0][i][d], model_out[1][i][d], model_out[2][i][d]) for model_out in out]
-            unc[i].append(mog_jensen_shanon(mogs_per_sample))
+            mogs_d = [marginal_mog(mog_d, d) for mog_d in mogs_per_sample]
+            unc[i].append(mog_jensen_shanon(mogs_d))
 
     return np.array(unc)

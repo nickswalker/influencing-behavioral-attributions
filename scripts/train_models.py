@@ -2,6 +2,7 @@ import glob
 import json
 import os
 import random
+import shutil
 
 import pandas as pd
 import torch
@@ -126,8 +127,7 @@ def cross_validate_svm():
 
 def cross_validate_mdn():
     all_metrics = [[], [], []]
-    models = [[],[],[]]
-    for random_state in range(15):
+    for random_state in range(16):
         x, x_test, y, y_test = pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
         for i, data in enumerate(condition_ratings):
             x_n = data[["features", "uuid"]]
@@ -153,17 +153,17 @@ def cross_validate_mdn():
 
             name = f"mdn_{random_state}_{i}"
             print(name)
-            mdn_res, best_model = train_mdn(x, y, x_val, y_val, x_test, y_test, name=name)
+            mdn_res, best_model, _ = train_mdn(x, y, x_val, y_val, x_test, y_test, name=name)
 
-            all_metrics[i].append([mdn_res[f"test_loss_{i}"] for i in range(3)])
-            print(all_metrics)
+            all_metrics[i].append(mdn_res[f"test_loss"])
+
 
             #make_mog_test_plots(best_model, x_test, y_test)
-    print(np.array(all_metrics).mean(1).sum(1))
+    print(np.array(all_metrics).mean(1))
     print("done")
 
 
-def ensemble_mdn():
+def ensemble_mdn(n):
     all_metrics = []
     models = []
     x_all = pd.concat([data[["features", "uuid"]] for data in condition_ratings])
@@ -180,21 +180,21 @@ def ensemble_mdn():
     y_test_np = y_test[["factor0", "factor1", "factor2"]].to_numpy()
     test_data = TensorDataset(torch.from_numpy(np.vstack(x_test["features"])).float(),
                               torch.from_numpy(y_test_np).float())
-    for random_state in range(8):
+    for random_state in range(n):
         gss = GroupShuffleSplit(n_splits=1, test_size=0.3, random_state=random_state)
         train_i, val_i = next(gss.split(x, y, groups=x["uuid"]))
         x_train, y_train, x_val, y_val = x.iloc[train_i], y.iloc[train_i], x.iloc[val_i], y.iloc[val_i]
 
         name = f"mdn_{random_state}"
         print(name)
-        mdn_res, best_model = train_mdn(x, y, x_val, y_val, x_test, y_test, name=name)
+        mdn_res, best_model, best_path = train_mdn(x, y, x_val, y_val, x_test, y_test, name=name)
+        shutil.copyfile(best_path, name+".ckpt")
+        all_metrics.append(mdn_res[f"test_loss"])
 
-        all_metrics.append([mdn_res[f"test_loss_{i}"] for i in range(3)])
-
-        # make_mog_test_plots(best_model, x_test, y_test)
+        make_mog_test_plots(best_model, x_test, y_test)
         models.append(best_model)
     print("Metrics")
-    print(np.array(all_metrics).mean(0), np.array(all_metrics).mean(0).sum())
+    print(np.array(all_metrics).mean(0))
     train_data = TensorDataset(torch.from_numpy(np.vstack(x["features"])).float(),
                                torch.from_numpy(np.vstack(y[["factor0", "factor1"]].to_numpy())).float())
     unc_js_train = ens_uncertainty_js(models, train_data.tensors[0])
@@ -281,7 +281,7 @@ def fit_traj_lstm():
 
 #fit_traj_lstm()
 #cross_validate_mdn()
-ensemble_mdn()
+ensemble_mdn(16)
 # factor_score_weights = pd.DataFrame(analysis.loadings_.T, columns=question_names)
 # We'll repeat this in a kind of full process cross validation
 

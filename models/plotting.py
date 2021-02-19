@@ -146,18 +146,25 @@ def make_density(name, data, true_points=None):
     ax.set_ylim([-0.05,1.4])
     return fig
 
+
 def make_mog(name, pi, sigma, mu, true_points=None):
     fig, ax = plt.subplots(1, 1, figsize=(6, 3.5))
-    xs = np.linspace(-3,3, 200).reshape([-1, 1])
-    for i in range(pi.shape[0]):
-        plt.plot(xs, mog_prob(pi[i].repeat(200,1), sigma[i].repeat(200,1,1), mu[i].repeat(200,1,1), torch.Tensor(xs)).detach().numpy(), "-", label=["competent", "broken", "curious"][i])
+    n = 200
+    xs = np.linspace(-3, 3, n).reshape([-1, 1])
+    dims = mu.shape[-1]
+    for d in range(dims):
+        marginal_mu = mu[:, [d]]
+        marginal_sigma = sigma[:, [d]]
+        mog = batch_mog((pi, marginal_sigma, marginal_mu), n)
+        plt.plot(xs, mog_prob(*mog, torch.Tensor(xs)).detach().numpy(), "-",
+                 label=["competent", "broken", "curious"][d])
     if true_points is not None:
         for i in range(true_points.shape[1]):
             plt.scatter(true_points[:, i], np.zeros(len(true_points)) + i * 0.05, marker="x")
     ax.legend()
     ax.set_title(name)
     ax.set_xlabel("Factor Scores")
-    ax.set_ylim([-0.05, 3.0])
+    ax.set_ylim([-0.05, 1.5])
     return fig
 
 def make_acc_over_iteration(acc_by_factor):
