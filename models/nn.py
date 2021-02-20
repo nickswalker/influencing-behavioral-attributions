@@ -8,7 +8,6 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from torch.utils.data import TensorDataset, DataLoader, Dataset
 
 from models import mdn
-from models.mdn import sample_mog_n
 from models.plotting import make_mog, make_density
 from models.util import LitProgressBar
 import numpy as np
@@ -23,6 +22,10 @@ class LitMDN(pl.LightningModule):
         self.features = nn.Sequential(nn.Linear(in_features, hidden_size), nn.Tanh())
         self.mdn = mdn.MDN(hidden_size, out_features, gaussians)
 
+    def log_prob(self, x, y):
+        feats = self.features(x)
+        return self.mdn.log_prob(feats, y)
+
     def forward(self, x):
         feats = self.features(x)
         return self.mdn(feats)
@@ -33,24 +36,21 @@ class LitMDN(pl.LightningModule):
             x += torch.normal(0, self.noise_regularization, x.shape)
             y += torch.normal(0, self.noise_regularization, y.shape)
         feats = self.features(x)
-        out = self.mdn(feats)
-        loss = mdn.mdn_loss(*out, y)
+        loss = torch.mean(self.mdn.nll(feats, y))
         self.log('train_loss', loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
         feats = self.features(x)
-        out = self.mdn(feats)
-        loss = mdn.mdn_loss(*out, y)
+        loss = torch.mean(self.mdn.nll(feats, y))
         self.log('val_loss', loss)
         return loss
 
     def test_step(self, batch, batch_idx):
         x, y = batch
         feats = self.features(x)
-        out = self.mdn(feats)
-        loss = mdn.mdn_loss(*out, y)
+        loss = torch.mean(self.mdn.nll(feats, y))
         self.log('test_loss', loss)
         return loss
 
@@ -82,11 +82,12 @@ def collate_fn_padd(batch):
     mask = (x != -3)
     return x, lengths, mask, y
 
-def train_mdn(x, y, x_val, y_val, x_test, y_test, name=None):
+
+def train_mdn(x, y, x_val, y_val, x_test, y_test, hparams={"hidden_size": 5, "gaussians": 4, "noise_regularization": 0.15}, name=None):
     if name is None:
         name = "mdn"
     # initialize the model
-    module = LitMDN(in_features=11, out_features=3, hidden_size=5, gaussians=4, noise_regularization=0.15)
+    module = LitMDN(in_features=11, out_features=3, hidden_size=hparams["hidden_size"], gaussians=hparams["gaussians"], noise_regularization=hparams["noise_regularization"])
     y = y[["factor0", "factor1", "factor2"]].to_numpy()
     y_val = y_val[["factor0", "factor1", "factor2"]].to_numpy()
     y_test = y_test[["factor0", "factor1", "factor2"]].to_numpy()

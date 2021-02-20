@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.autograd import Variable
-from torch.distributions import Categorical
+from torch.distributions import Categorical, MultivariateNormal, MixtureSameFamily, Normal
 import math
 from scipy.stats import wasserstein_distance
 
@@ -46,79 +46,47 @@ class MDN(nn.Module):
             nn.Linear(in_features, num_gaussians),
             nn.Softmax(dim=1)
         )
-        self.sigma = nn.Linear(in_features, out_features * num_gaussians)
+        # self.sigma = nn.Linear(in_features, out_features * self.num_gaussians * (out_features *(out_features + 1))// 2)
+        self.sigma = nn.Linear(in_features, self.num_gaussians * out_features ** 2)
         self.mu = nn.Linear(in_features, out_features * num_gaussians)
 
     def forward(self, x):
         pi = self.pi(x)
-        sigma = torch.exp(self.sigma(x))
-        sigma = sigma.view(-1, self.num_gaussians, self.out_features)
+        sigma = self.sigma(x).view(-1, self.num_gaussians, self.out_features, self.out_features)
+        sigma = torch.tril(sigma)
+        # Ensure diagonal is positive
+        sigma[:, :, torch.eye(3).bool()] = torch.exp(torch.diagonal(sigma, dim1=-2, dim2=-1))
         mu = self.mu(x)
         mu = mu.view(-1, self.num_gaussians, self.out_features)
         return pi, sigma, mu
 
+    def log_prob(self, x, y):
+        pi, sigma, mu = self.forward(x)
+        m = MultivariateNormal(mu, scale_tril=sigma)
+        mix = Categorical(pi)
+        mog = MixtureSameFamily(mix, m)
+        return mog.log_prob(y)
 
-def gaussian_probability(sigma, mu, target):
-    """Returns the probability of `data` given MoG parameters `sigma` and `mu`.
-
-    Arguments:
-        sigma (BxGxO): The standard deviation of the Gaussians. B is the batch
-            size, G is the number of Gaussians, and O is the number of
-            dimensions per Gaussian.
-        mu (BxGxO): The means of the Gaussians. B is the batch size, G is the
-            number of Gaussians, and O is the number of dimensions per Gaussian.
-        target (BxI): A batch of data. B is the batch size and I is the number of
-            input dimensions.
-    Returns:
-        probabilities (BxG): The probability of each point in the probability
-            of the distribution in the corresponding sigma/mu index.
-    """
-    target = target.unsqueeze(1).expand_as(sigma)
-    ret = ONEOVERSQRT2PI * torch.exp(-0.5 * ((target - mu) / sigma) ** 2) / sigma
-    return torch.prod(ret, 2)
-
-
-def mdn_loss(pi, sigma, mu, target):
-    """Calculates the error, given the MoG parameters and the target
-    The loss is the negative log likelihood of the data given the MoG
-    parameters.
-    """
-    prob = pi * gaussian_probability(sigma, mu, target)
-    nll = -torch.log(torch.sum(prob, dim=1))
-    return torch.mean(nll)
+    def nll(self, x, y):
+        return -self.log_prob(x, y)
 
 
 def mog_prob(pi, sigma, mu, target):
-    prob = pi * gaussian_probability(sigma, mu, target)
-    return torch.sum(prob, dim=1)
-
-
-def sample_mog_n(n, pi, sigma, mu):
-    all = [sample_mog(pi, sigma, mu) for _ in range(n)]
-    all = [torch.unsqueeze(x, 1) for x in all]
-    return torch.cat(all, 1)
-
-
-def mog_mean(pi, mu):
-    """
-
-    :param pi:  a probability vector
-    :param mu: GxO
-    :return:
-    """
-    return pi @ mu
+    m = MultivariateNormal(mu, scale_tril=sigma)
+    mix = Categorical(pi)
+    mog = MixtureSameFamily(mix, m)
+    return torch.exp(mog.log_prob(target))
 
 
 def mog_mode(pi, sigma, mu):
     from scipy import optimize
-    import numpy as np
     dims = mu.shape[-1]
     mode = np.zeros([dims])
     for d in range(dims):
         mog_d = marginal_mog((pi, sigma, mu), d)
-        batch_mog_d = batch_mog(mog_d, 1)
+
         def nmog_prob_x(x):
-            return -mog_prob(*batch_mog_d,
+            return -mog_prob(*mog_d,
                              torch.Tensor(x)).detach().numpy()
 
         mode[d] = scipy.optimize.brute(nmog_prob_x, [(-3, 3)])
@@ -128,21 +96,16 @@ def mog_mode(pi, sigma, mu):
 def mog_kl(mog1, mog2):
     x = np.linspace(-3, 3, 120)
     x_batch = torch.Tensor(x.reshape([-1, 1]))
-    n = len(x)
-    mog1 = batch_mog(mog1, n)
-    mog2 = batch_mog(mog2, n)
 
     y1 = mog_prob(*mog1, x_batch).detach().numpy().flatten()
     y2 = mog_prob(*mog2, x_batch).detach().numpy().flatten()
     kl = kl_div(x, y1, y2)
     return kl
 
+
 def mog_wasserstein(mog1, mog2):
     x = np.linspace(-3, 3, 120)
     x_batch = torch.Tensor(x.reshape([-1, 1]))
-    n = len(x)
-    mog1 = batch_mog(mog1, n)
-    mog2 = batch_mog(mog2, n)
 
     y1 = mog_prob(*mog1, x_batch).detach().numpy().flatten()
     y2 = mog_prob(*mog2, x_batch).detach().numpy().flatten()
@@ -154,9 +117,7 @@ def mog_entropy(pi, sigma, mu):
     x = np.linspace(-3, 3, 120)
     x_batch = torch.Tensor(x.reshape([-1, 1]))
     n = len(x)
-    mog1 = batch_mog((pi, sigma, mu), n)
-
-    y1 = mog_prob(*mog1, x_batch).detach().numpy().flatten()
+    y1 = mog_prob(pi, sigma, mu, x_batch).detach().numpy().flatten()
     y2 = np.full([n], 1.0 / 6.0)
     return kl_div(x, y1, y2)
 
@@ -186,12 +147,13 @@ def batch_mog(mog, n):
 def marginal_mog(mog, d):
     pi, sigma, mu = mog
     marginal_mu = mu[:, [d]]
-    marginal_sigma = sigma[:, [d]]
+    marginal_sigma = sigma[:, [d]][:, :, [d]]
     return pi, marginal_sigma, marginal_mu
 
 
 def uniform(width, samples):
     return np.full([samples], 1.0 / width)
+
 
 def mog_jensen_shanon(mogs):
     # Params are assumed to be batched
@@ -199,28 +161,15 @@ def mog_jensen_shanon(mogs):
     entropies = []
     x = np.linspace(-3, 3, 120)
     x_batch = torch.Tensor(x.reshape([-1, 1]))
-    n = len(x)
     for mog in mogs:
-        mog = batch_mog(mog, n)
         mog_prob_i = mog_prob(*mog, x_batch).detach().numpy().flatten()
         probs.append(mog_prob_i)
         entropies.append(kl_div(x, mog_prob_i, uniform(6.0, 120)))
 
     mixture_prob = np.array(probs).sum(0) / len(probs)
-    mixture_entropy = kl_div(x, mixture_prob, uniform(6.0,120))
+    mixture_entropy = kl_div(x, mixture_prob, uniform(6.0, 120))
 
     return mixture_entropy - (sum(entropies) / len(entropies))
-
-
-def sample_mog(pi, sigma, mu):
-    """Draw samples from a MoG.
-    """
-    categorical = Categorical(pi)
-    pis = list(categorical.sample().data)
-    sample = Variable(sigma.data.new(sigma.size(0), sigma.size(2)).normal_())
-    for i, idx in enumerate(pis):
-        sample[i] = sample[i].mul(sigma[i, idx]).add(mu[i, idx])
-    return sample
 
 
 def ens_uncertainty_mode(models, samples):
@@ -229,14 +178,11 @@ def ens_uncertainty_mode(models, samples):
     for model in models:
         out.append(model.forward(samples))
     modes = [[] for _ in range(len(samples))]
-    means = [[] for _ in range(len(samples))]
     for i, (pi, sigma, mu) in enumerate(out):
         for k in range(len(samples)):
             mode = mog_mode(pi[k], sigma[k], mu[k])
-            mean = mog_mean(pi[k], mu[k]).squeeze()
             modes[k].append(mode)
-            means[k].append(mean.detach().numpy())
-    return np.array(modes).mean(1), np.array(modes).std(1), np.array(means).mean(1), np.array(means).std(1)
+    return np.array(modes).mean(1), np.array(modes).std(1)
 
 
 def ens_uncertainty_kl(models, samples):

@@ -16,7 +16,7 @@ import numpy as np
 from sklearn.model_selection import GroupShuffleSplit
 from torch.utils.data import TensorDataset
 
-from models.mdn import mog_mode, mog_mean, mog_kl, ens_uncertainty_kl, ens_uncertainty_mode, ens_uncertainty_js, \
+from models.mdn import mog_mode, mog_kl, ens_uncertainty_kl, ens_uncertainty_mode, ens_uncertainty_js, \
     ens_uncertainty_w
 from models.nn import train_mdn
 from models.plotting import make_mog
@@ -125,9 +125,10 @@ def cross_validate_svm():
         acc_by_factor[i] = np.array(acc).reshape(-1, 3)
 
 
-def cross_validate_mdn():
+def cross_validate_mdn(n, hparams):
+    print(hparams)
     all_metrics = [[], [], []]
-    for random_state in range(16):
+    for random_state in range(n):
         x, x_test, y, y_test = pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
         for i, data in enumerate(condition_ratings):
             x_n = data[["features", "uuid"]]
@@ -145,7 +146,6 @@ def cross_validate_mdn():
             else:
                 x = pd.concat([x, x_n])
                 y = pd.concat([y, y_n])
-            # Bin the data
 
             gss = GroupShuffleSplit(n_splits=1, test_size=0.3, random_state=random_state)
             train_i, val_i = next(gss.split(x, y, groups=x["uuid"]))
@@ -153,10 +153,9 @@ def cross_validate_mdn():
 
             name = f"mdn_{random_state}_{i}"
             print(name)
-            mdn_res, best_model, _ = train_mdn(x, y, x_val, y_val, x_test, y_test, name=name)
+            mdn_res, best_model, _ = train_mdn(x, y, x_val, y_val, x_test, y_test, hparams=hparams, name=name)
 
             all_metrics[i].append(mdn_res[f"test_loss"])
-
 
             #make_mog_test_plots(best_model, x_test, y_test)
     print(np.array(all_metrics).mean(1))
