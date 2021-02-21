@@ -47,7 +47,7 @@ class MDN(nn.Module):
             nn.Linear(in_features, num_gaussians),
             nn.Softmax(dim=1)
         )
-        self.sigma = nn.Linear(in_features,  self.num_gaussians * (out_features *(out_features + 1))// 2)
+        self.sigma = nn.Linear(in_features, self.num_gaussians * (out_features * (out_features + 1)) // 2)
         self.mu = nn.Linear(in_features, out_features * num_gaussians)
         self.dummy_param = nn.Parameter(torch.empty(0))
 
@@ -56,7 +56,8 @@ class MDN(nn.Module):
         pi = self.pi(x)
         sigma_tril = torch.zeros([x.shape[0], self.num_gaussians, self.out_features, self.out_features], device=device)
         ti = torch.tril_indices(self.out_features, self.out_features, device=device)
-        sigma_tril[:,:,ti[0], ti[1]] = self.sigma(x).view(-1, self.num_gaussians, (self.out_features *(self.out_features + 1))// 2)
+        sigma_tril[:, :, ti[0], ti[1]] = self.sigma(x).view(-1, self.num_gaussians,
+                                                            (self.out_features * (self.out_features + 1)) // 2)
         # Ensure diagonal is positive
         sigma_tril[:, :, torch.eye(3).bool()] = torch.exp(torch.diagonal(sigma_tril, dim1=-2, dim2=-1))
         mu = self.mu(x)
@@ -80,20 +81,34 @@ def mog_log_prob(pi, sigma, mu, target):
     m = MultivariateNormal(mu, scale_tril=sigma)
     mix = Categorical(pi)
     mog = MixtureSameFamily(mix, m)
-    return mog.log_prob(target)
+
+    probs = mog.log_prob(target)
+    fixed_i = np.arange(0, len(probs.shape))
+    if len(fixed_i) > 2:
+        fixed_i = np.roll(fixed_i, -1).tolist()
+    else:
+        fixed_i = fixed_i.tolist()
+    return probs.permute(fixed_i)
 
 
 def mog_prob(pi, sigma, mu, target):
     return torch.exp(mog_log_prob(pi, sigma, mu, target))
 
 
-def marginal_mog_log_prob(pi,sigma,mu, target):
+def marginal_mog_log_prob(pi, sigma, mu, target):
     dims = mu.shape[-1]
     probs = []
     for d in range(dims):
         mog_d = marginal_mog((pi, sigma, mu), d)
-        probs.append(mog_log_prob(*mog_d, target).swapaxes(0,-1))
-    return torch.stack(probs, dim=1)
+        probs.append(mog_log_prob(*mog_d, target))
+    return torch.stack(probs, dim=2)
+
+
+def mog_desc(pi, sigma, mu):
+    m = MultivariateNormal(mu, scale_tril=sigma)
+    mix = Categorical(pi)
+    mog = MixtureSameFamily(mix, m)
+    return mog.mean, mog.variance
 
 
 def mog_mode(pi, sigma, mu):
@@ -117,7 +132,7 @@ def mog_kl(mog1, mog2):
 
     y1 = mog_prob(*mog1, x_batch).detach().numpy().flatten()
     y2 = mog_prob(*mog2, x_batch).detach().numpy().flatten()
-    kl = kl_div(x, y1, y2)
+    kl = kl_div_np(x, y1, y2)
     return kl
 
 
@@ -137,20 +152,20 @@ def mog_entropy(pi, sigma, mu):
     n = len(x)
     y1 = mog_prob(pi, sigma, mu, x_batch).detach().numpy().flatten()
     y2 = np.full([n], 1.0 / 6.0)
-    return kl_div(x, y1, y2)
+    return kl_div_np(x, y1, y2)
 
 
-def kl_div(domain, dist1, dist2):
+def kl_div_np(domain, dist1, dist2):
     eps = 0.0000001
     if min(dist1) == 0.0:
         smoothed1 = dist1 + eps
         smoothed1 /= np.trapz(smoothed1, domain)
-        kl = kl_div(domain, smoothed1, dist2)
+        kl = kl_div_np(domain, smoothed1, dist2)
         return kl
     if min(dist2) == 0.0:
         smoothed2 = dist2 + eps
         smoothed2 /= np.trapz(smoothed2, domain)
-        kl = kl_div(domain, dist1, smoothed2)
+        kl = kl_div_np(domain, dist1, smoothed2)
         return kl
     kl = np.trapz(dist1 * np.log2(dist1 / dist2), domain)
 
@@ -165,12 +180,16 @@ def batch_mog(mog, n):
 def marginal_mog(mog, d):
     pi, sigma, mu = mog
     marginal_mu = mu[..., [d]]
-    marginal_sigma = sigma[..., [d]][...,[d], :]
+    marginal_sigma = sigma[..., [d]][..., [d], :]
     return pi, marginal_sigma, marginal_mu
 
 
 def uniform(width, samples):
     return np.full([samples], 1.0 / width)
+
+
+def normal(mu, sigma, x):
+    return scipy.stats.norm.pdf(x, mu, sigma)
 
 
 def mog_jensen_shanon(mogs):
@@ -182,49 +201,38 @@ def mog_jensen_shanon(mogs):
     for mog in mogs:
         mog_prob_i = mog_prob(*mog, x_batch).detach().numpy().flatten()
         probs.append(mog_prob_i)
-        entropies.append(kl_div(x, mog_prob_i, uniform(6.0, 120)))
+        entropies.append(kl_div_np(x, mog_prob_i, uniform(6.0, 120)))
 
     mixture_prob = np.array(probs).sum(0) / len(probs)
-    mixture_entropy = kl_div(x, mixture_prob, uniform(6.0, 120))
+    mixture_entropy = kl_div_np(x, mixture_prob, uniform(6.0, 120))
 
     return mixture_entropy - (sum(entropies) / len(entropies))
 
 
-def ens_uncertainty_mode(models, samples):
-    out = []
-
-    for model in models:
-        out.append(model.forward(samples))
-    modes = [[] for _ in range(len(samples))]
-    for i, (pi, sigma, mu) in enumerate(out):
-        for k in range(len(samples)):
-            mode = mog_mode(pi[k], sigma[k], mu[k])
-            modes[k].append(mode)
-    return np.array(modes).mean(1), np.array(modes).std(1)
+def ens_uncertainty_mean(ens, samples):
+    out = ens.forward(samples)
+    means = mog_desc(*out)[0]
+    return means.std(1)
 
 
-def ens_uncertainty_kl(models, samples):
-    out = []
+def ens_uncertainty_mode(ens, samples):
+    out = ens.forward(samples)
+    x = torch.linspace(-3, 3, 600)
+    probs = marginal_mog_log_prob(*out, x.reshape([-1, 1, 1]))
+    modes = x[torch.argmax(probs, dim=-1)]
+    # Variance of ens modes per dim
+    return modes.std(1)
 
-    for model in models:
-        out.append(model.forward(samples))
 
-    ind = list(range(len(out)))
-    dims = out[0][1].shape[-1]
-    kl_div = [[[] for _ in range(dims)] for _ in range(len(samples))]
-    # Iterate pairs of models
-    for i, j in itertools.product(ind, ind):
-        if i == j:
-            continue
-        m0, m1 = out[i], out[j]
-        for k in range(len(samples)):
-            m0k = m0[0][k], m0[1][k], m0[2][k]
-            m1k = m1[0][k], m1[1][k], m1[2][k]
-            for d in range(dims):
-                kl_div[k][d].append(mog_kl(marginal_mog(m0k, d), marginal_mog(m1k, d)))
-
+def ens_uncertainty_kl(ens, samples):
+    n = len(ens.models)
+    probs = marginal_mog_log_prob(*ens.forward(samples), torch.linspace(-3, 3, 120).reshape([-1, 1, 1]))
+    pairwise_kl = F.kl_div(probs.unsqueeze(1), probs.unsqueeze(2), reduction='none', log_target=True)
+    pairwise_kl = torch.trapz(pairwise_kl, dx=0.05)
+    offdiag_i = torch.hstack([torch.tril_indices(n, n, -1), torch.triu_indices(n, n, 1)])
+    offdiag_kl = pairwise_kl[:, offdiag_i[0], offdiag_i[1]]
     # Mean over all pairs of distances. Out is uncertainty per dimension per sample
-    return np.array(kl_div).mean(2)
+    return offdiag_kl.mean(1)
 
 
 def ens_uncertainty_w(models, samples):
