@@ -33,8 +33,8 @@ class LitMDN(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         x, y = batch
         if self.noise_regularization != 0.0:
-            x += torch.normal(0, self.noise_regularization, x.shape)
-            y += torch.normal(0, self.noise_regularization, y.shape)
+            x += torch.normal(0, self.noise_regularization, x.shape, device=self.device)
+            y += torch.normal(0, self.noise_regularization, y.shape, device=self.device)
         feats = self.features(x)
         loss = torch.mean(self.mdn.nll(feats, y))
         self.log('train_loss', loss)

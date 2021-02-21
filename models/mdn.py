@@ -10,6 +10,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.autograd import Variable
 from torch.distributions import Categorical, MultivariateNormal, MixtureSameFamily, Normal
+import torch.nn.functional as F
 import math
 from scipy.stats import wasserstein_distance
 
@@ -46,19 +47,21 @@ class MDN(nn.Module):
             nn.Linear(in_features, num_gaussians),
             nn.Softmax(dim=1)
         )
-        # self.sigma = nn.Linear(in_features, out_features * self.num_gaussians * (out_features *(out_features + 1))// 2)
-        self.sigma = nn.Linear(in_features, self.num_gaussians * out_features ** 2)
+        self.sigma = nn.Linear(in_features,  self.num_gaussians * (out_features *(out_features + 1))// 2)
         self.mu = nn.Linear(in_features, out_features * num_gaussians)
+        self.dummy_param = nn.Parameter(torch.empty(0))
 
     def forward(self, x):
+        device = self.dummy_param.device
         pi = self.pi(x)
-        sigma = self.sigma(x).view(-1, self.num_gaussians, self.out_features, self.out_features)
-        sigma = torch.tril(sigma)
+        sigma_tril = torch.zeros([x.shape[0], self.num_gaussians, self.out_features, self.out_features], device=device)
+        ti = torch.tril_indices(self.out_features, self.out_features, device=device)
+        sigma_tril[:,:,ti[0], ti[1]] = self.sigma(x).view(-1, self.num_gaussians, (self.out_features *(self.out_features + 1))// 2)
         # Ensure diagonal is positive
-        sigma[:, :, torch.eye(3).bool()] = torch.exp(torch.diagonal(sigma, dim1=-2, dim2=-1))
+        sigma_tril[:, :, torch.eye(3).bool()] = torch.exp(torch.diagonal(sigma_tril, dim1=-2, dim2=-1))
         mu = self.mu(x)
         mu = mu.view(-1, self.num_gaussians, self.out_features)
-        return pi, sigma, mu
+        return pi, sigma_tril, mu
 
     def log_prob(self, x, y):
         pi, sigma, mu = self.forward(x)
