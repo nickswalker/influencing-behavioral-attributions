@@ -7,7 +7,6 @@ from factor_analyzer import FactorAnalyzer
 from matplotlib import pyplot as plt, ticker
 from sklearn.metrics import plot_confusion_matrix
 
-from models.mdn import mog_prob, marginal_mog
 from models.util import question_code_to_name
 
 
@@ -149,15 +148,11 @@ def make_density(name, data, true_points=None):
     return fig
 
 
-def make_mog(name, pi, sigma, mu, true_points=None):
+def make_mog(name, probs, true_points=None):
     fig, ax = plt.subplots(1, 1, figsize=(6, 3.5))
-    n = 200
-    x = np.linspace(-3, 3, n)
-    x_batch = x.reshape([-1, 1])
-    dims = mu.shape[-1]
-    for d in range(dims):
-        mog = marginal_mog((pi, sigma, mu), d)
-        mog_p = mog_prob(*mog, torch.Tensor(x_batch)).detach().numpy()
+    x = np.linspace(-3, 3, 200)
+    for d in range(probs.shape[0]):
+        mog_p = probs[d]
         tot = np.trapz(mog_p, x)
         plt.plot(x, mog_p, "-",
                  label=["competent", "broken", "curious"][d])

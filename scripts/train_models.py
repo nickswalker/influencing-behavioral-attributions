@@ -16,9 +16,9 @@ import numpy as np
 from sklearn.model_selection import GroupShuffleSplit
 from torch.utils.data import TensorDataset
 
-from models.mdn import mog_mode, mog_kl, ens_uncertainty_kl, ens_uncertainty_mode, ens_uncertainty_js, \
-    ens_uncertainty_w
-from models.nn import train_mdn
+from models.mdn import mog_mode, ens_uncertainty_kl, ens_uncertainty_mode, ens_uncertainty_js, \
+    ens_uncertainty_w, marginal_mog_log_prob
+from models.nn import train_mdn, MDNEnsemble
 from models.plotting import make_mog
 from models.simple import fit_svm, bin_factor_score, bin_likert
 from models.util import process_turk_files, question_names
@@ -30,10 +30,15 @@ def make_mog_test_plots(model, x_test, y_test, model_name=""):
     test_data = TensorDataset(torch.from_numpy(np.vstack(x_test["features"])).float(), torch.from_numpy(y_test).float())
     pi, sigma, mu = model.forward(test_data.tensors[0])
 
+    n = 200
+    x = np.linspace(-3, 3, n)
+    x_batch = x.reshape([-1, 1])
+    probs = torch.exp(marginal_mog_log_prob(pi, sigma, mu, torch.Tensor(x_batch))).detach().numpy()
+
     for i in range(len(x_test)):
         truth_i = x_test["uuid"] == x_test["uuid"].iloc[i]
         truth_y = y_test[truth_i]
-        fig = make_mog(f"{model_name} traj={x_test['uuid'].iloc[i]}", pi[i], sigma[i], mu[i], true_points=truth_y)
+        fig = make_mog(f"{model_name} traj={x_test['uuid'].iloc[i]}", probs[i], true_points=truth_y)
         fig.show()
     return
 

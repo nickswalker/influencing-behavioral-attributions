@@ -74,11 +74,26 @@ class MDN(nn.Module):
         return -self.log_prob(x, y)
 
 
-def mog_prob(pi, sigma, mu, target):
+def mog_log_prob(pi, sigma, mu, target):
+    # target isn't batched across mogs
+    target = target.unsqueeze(1)
     m = MultivariateNormal(mu, scale_tril=sigma)
     mix = Categorical(pi)
     mog = MixtureSameFamily(mix, m)
-    return torch.exp(mog.log_prob(target))
+    return mog.log_prob(target)
+
+
+def mog_prob(pi, sigma, mu, target):
+    return torch.exp(mog_log_prob(pi, sigma, mu, target))
+
+
+def marginal_mog_log_prob(pi,sigma,mu, target):
+    dims = mu.shape[-1]
+    probs = []
+    for d in range(dims):
+        mog_d = marginal_mog((pi, sigma, mu), d)
+        probs.append(mog_log_prob(*mog_d, target).swapaxes(0,-1))
+    return torch.stack(probs, dim=1)
 
 
 def mog_mode(pi, sigma, mu):
@@ -149,8 +164,8 @@ def batch_mog(mog, n):
 
 def marginal_mog(mog, d):
     pi, sigma, mu = mog
-    marginal_mu = mu[:, [d]]
-    marginal_sigma = sigma[:, [d]][:, :, [d]]
+    marginal_mu = mu[..., [d]]
+    marginal_sigma = sigma[..., [d]][...,[d], :]
     return pi, marginal_sigma, marginal_mu
 
 
