@@ -66,6 +66,45 @@ class LitMDN(pl.LightningModule):
         return items
 
 
+def load_ensemble(path):
+    ens = []
+    for i in range(8):
+        ens.append(LitMDN.load_from_checkpoint(path + "/mdn_" + str(i) + ".ckpt"))
+    return MDNEnsemble(ens)
+
+
+class MDNEnsemble(nn.Module):
+    def __init__(self, models):
+        super().__init__()
+        self.models = models
+
+    def forward(self, x):
+        out = []
+        for m in self.models:
+            out.append(m.forward(x))
+        pi = torch.stack([p[0] for p in out], dim=1)
+        sigma = torch.stack([p[1] for p in out], dim=1)
+        mu = torch.stack([p[2] for p in out], dim=1)
+        return pi, sigma, mu
+
+    def freeze(self):
+        for m in self.models:
+            for param in m.parameters():
+                    param.requires_grad_(False)
+
+    def log_prob(self, x, y):
+        out = self.forward(x)
+        prob = mog_log_prob(*out,y)
+        return prob
+
+    def prob(self, x, y):
+        return torch.exp(self.log_prob(x, y))
+
+    def mean_prob(self, x, y):
+        return torch.mean(torch.exp(self.log_prob(x, y)),dim=1)
+
+
+
 def collate_fn_padd(batch):
     '''
     Padds batch of variable length
@@ -110,9 +149,17 @@ def train_mdn(x, y, x_val, y_val, x_test, y_test, hparams={"hidden_size": 5, "ga
     progress = LitProgressBar()
     # progress_bar_refresh_rate=0
     logger = TensorBoardLogger('train_logs', name=name)
-    trainer = pl.Trainer(deterministic=True, max_epochs=10000,
+    trainer = pl.Trainer(terminate_on_nan=True, deterministic=True, max_epochs=10000,
                          callbacks=[checkpoint_callback, early_stop_callback, progress], val_check_interval=1.0, logger=logger)
-    trainer.fit(module, DataLoader(train_data, batch_size=32, shuffle=True), DataLoader(val_data))
+    i = 0
+    while True:
+        try:
+            trainer.fit(module, DataLoader(train_data, batch_size=32, shuffle=True), DataLoader(val_data))
+            break
+        except ValueError as e:
+            i += 1
+            print(e)
+            print(f"Retrying {i}...")
     best_validation = LitMDN.load_from_checkpoint(checkpoint_path=checkpoint_callback.best_model_path)
     # trainer.test(module, DataLoader(test_data), verbose=False)[0]
     results = trainer.test(best_validation, DataLoader(test_data), verbose=False)[0]

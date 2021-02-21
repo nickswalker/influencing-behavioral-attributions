@@ -17,7 +17,7 @@ from sklearn.model_selection import GroupShuffleSplit
 from torch.utils.data import TensorDataset
 
 from models.mdn import mog_mode, ens_uncertainty_kl, ens_uncertainty_mode, ens_uncertainty_js, \
-    ens_uncertainty_w, marginal_mog_log_prob
+    ens_uncertainty_w, marginal_mog_log_prob, ens_uncertainty_mean
 from models.nn import train_mdn, MDNEnsemble
 from models.plotting import make_mog
 from models.simple import fit_svm, bin_factor_score, bin_likert
@@ -175,7 +175,8 @@ def ensemble_mdn(n):
 
     gss = GroupShuffleSplit(n_splits=1, test_size=0.3, random_state=0)
     train_i, test_i = next(gss.split(x_all, y_all, groups=x_all["uuid"]))
-
+    with open("test_i.txt", 'w') as f:
+        f.write(str(test_i.tolist()))
     x = x_all.iloc[train_i]
     x_test = x_all.iloc[test_i]
     y = y_all.iloc[train_i]
@@ -197,28 +198,36 @@ def ensemble_mdn(n):
 
         make_mog_test_plots(best_model, x_test, y_test)
         models.append(best_model)
+
+    ens = MDNEnsemble(models)
+    ens.freeze()
+
     print("Metrics")
     print(np.array(all_metrics).mean(0))
     train_data = TensorDataset(torch.from_numpy(np.vstack(x["features"])).float(),
                                torch.from_numpy(np.vstack(y[["factor0", "factor1"]].to_numpy())).float())
-    unc_js_train = ens_uncertainty_js(models, train_data.tensors[0])
-    unc_js = ens_uncertainty_js(models, test_data.tensors[0])
-    unc_mode_train = ens_uncertainty_mode(models, train_data.tensors[0])
-    unc_mode = ens_uncertainty_mode(models, test_data.tensors[0])
-    unc_train = ens_uncertainty_kl(models, train_data.tensors[0])
-    unc = ens_uncertainty_kl(models, test_data.tensors[0])
-    unc_w_train = ens_uncertainty_w(models, train_data.tensors[0])
-    unc_w = ens_uncertainty_w(models, test_data.tensors[0])
+    #unc_js_train = ens_uncertainty_js(ens, train_data.tensors[0])
+    #unc_js = ens_uncertainty_js(ens, test_data.tensors[0])
+    unc_mode_train = ens_uncertainty_mode(ens, train_data.tensors[0])
+    unc_mode = ens_uncertainty_mode(ens, test_data.tensors[0])
+    unc_mean_train = ens_uncertainty_mean(ens, train_data.tensors[0])
+    unc_mean = ens_uncertainty_mean(ens, test_data.tensors[0])
+    unc_train = ens_uncertainty_kl(ens, train_data.tensors[0])
+    unc = ens_uncertainty_kl(ens, test_data.tensors[0])
+    #unc_w_train = ens_uncertainty_w(ens, train_data.tensors[0])
+    #unc_w = ens_uncertainty_w(ens, test_data.tensors[0])
     print("Train")
     print("kl",unc_train.mean(0))
-    print("mode", unc_mode_train[1].mean(0))
-    print("js", unc_js_train.mean(0))
-    print("w", unc_w_train.mean(0))
+    print("mode", unc_mode_train.mean(0))
+    print("mean", unc_mean_train.mean(0))
+    #print("js", unc_js_train.mean(0))
+    #print("w", unc_w_train.mean(0))
     print("Test")
     print("kl",unc.mean(0))
-    print("mode", unc_mode[1].mean(0))
-    print("js", unc_js.mean(0))
-    print("w", unc_w.mean(0))
+    print("mode", unc_mode.mean(0))
+    print("mean", unc_mean.mean(0))
+    #print("js", unc_js.mean(0))
+    #print("w", unc_w.mean(0))
     print("done")
 
 
