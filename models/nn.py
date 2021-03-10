@@ -8,7 +8,7 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from torch.utils.data import TensorDataset, DataLoader, Dataset
 
 from models import mdn
-from models.plotting import make_mog, make_density
+from models.mdn import  mog_log_prob
 from models.util import LitProgressBar
 import numpy as np
 
@@ -103,6 +103,9 @@ class MDNEnsemble(nn.Module):
     def mean_prob(self, x, y):
         return torch.mean(torch.exp(self.log_prob(x, y)),dim=1)
 
+    def mean_nll(self, x, y):
+        ens_probs = self.mean_prob(x, y)
+        return -torch.log(ens_probs).mean(0)
 
 
 def collate_fn_padd(batch):
@@ -121,8 +124,9 @@ def collate_fn_padd(batch):
     mask = (x != -3)
     return x, lengths, mask, y
 
-
-def train_mdn(x, y, x_val, y_val, x_test, y_test, hparams={"hidden_size": 5, "gaussians": 4, "noise_regularization": 0.15}, name=None):
+default_hparam = {"hidden_size": 5, "gaussians": 4, "noise_regularization": 0.15, "early_stopping":200, "epochs":10000}
+def train_mdn(x, y, x_val, y_val, x_test, y_test, hparams={}, name=None):
+    hparams = { **default_hparam, **hparams}
     if name is None:
         name = "mdn"
     # initialize the model
@@ -142,14 +146,14 @@ def train_mdn(x, y, x_val, y_val, x_test, y_test, hparams={"hidden_size": 5, "ga
     early_stop_callback = EarlyStopping(
         monitor='val_loss',
         min_delta=0.00,
-        patience=200,
+        patience=hparams["early_stopping"],
         verbose=False,
         mode='min'
     )
     progress = LitProgressBar()
     # progress_bar_refresh_rate=0
     logger = TensorBoardLogger('train_logs', name=name)
-    trainer = pl.Trainer(terminate_on_nan=True, deterministic=True, max_epochs=10000,
+    trainer = pl.Trainer(terminate_on_nan=True, deterministic=True, max_epochs=hparams["epochs"],
                          callbacks=[checkpoint_callback, early_stop_callback, progress], val_check_interval=1.0, logger=logger)
     i = 0
     while True:
@@ -163,5 +167,5 @@ def train_mdn(x, y, x_val, y_val, x_test, y_test, hparams={"hidden_size": 5, "ga
     best_validation = LitMDN.load_from_checkpoint(checkpoint_path=checkpoint_callback.best_model_path)
     # trainer.test(module, DataLoader(test_data), verbose=False)[0]
     results = trainer.test(best_validation, DataLoader(test_data), verbose=False)[0]
-
+    results = {**trainer.logged_metrics, **results}
     return results, best_validation, checkpoint_callback.best_model_path
