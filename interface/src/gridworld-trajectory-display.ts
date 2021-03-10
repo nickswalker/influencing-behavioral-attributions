@@ -41,7 +41,7 @@ export class GridworldTrajectoryDisplay extends GridworldTrajectoryPlayer {
         }
         this.trajectory = textToStates(this.getAttribute("trajectory"))
 
-        this.game = new GridworldGame(this.gameContainer, 32, null, this.getAttribute("map-name"),terrain)
+        this.game = new GridworldGame(this.gameContainer, null, null, this.getAttribute("map-name"),terrain)
         this.game.scene.stepwise = false
         this.game.displayTrajectory = this.trajectory
 
@@ -51,6 +51,7 @@ export class GridworldTrajectoryDisplay extends GridworldTrajectoryPlayer {
                 this.gameContainer.appendChild(image);
                 // Clear out any manual styling from Phaser
                 this.gameContainer.setAttribute("style", "")
+                this.dispatchEvent(new Event("ready"))
             });
 
         }
@@ -58,6 +59,15 @@ export class GridworldTrajectoryDisplay extends GridworldTrajectoryPlayer {
 
     }
 
+    download(name: string) {
+        const a = document.createElement("a");
+        document.body.appendChild(a);
+        a.style.display = "none";
+        a.href = this.gameContainer.querySelector<HTMLImageElement>("img").src;
+        a.download = name + ".png";
+        a.click();
+
+    }
 }
 
 window.customElements.define("gridworld-display", GridworldTrajectoryDisplay)

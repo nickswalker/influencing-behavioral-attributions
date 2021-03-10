@@ -3,13 +3,6 @@ import {Actions, GridMap, Gridworld, GridworldState, Position, TerrainType} from
 import CursorKeys = Phaser.Types.Input.Keyboard.CursorKeys;
 import Key = Phaser.Input.Keyboard.Key;
 
-const terrain_to_img: { [key in TerrainType]: string[] } = {
-    [TerrainType.Empty]: ['colors', 'sol_base2.png'],
-    [TerrainType.Goal]: ['landmarks', 'door.png'],
-    [TerrainType.Fire]: ['landmarks', 'fire.png'],
-    [TerrainType.Wall]: ['colors', "sol_base02_full.png"],
-    [TerrainType.Reward]: ['landmarks', "treasure.png"],
-};
 
 export class GridworldGame {
     private gameWidth: number
@@ -31,7 +24,9 @@ export class GridworldGame {
         mapName: string,
         terrain: GridMap = null
     ) {
-
+        if (tileSize === null) {
+            tileSize = 32
+        }
         this.container = container;
         this.gameWidth = tileSize * 6
         this.gameHeight = tileSize * 6
@@ -39,7 +34,7 @@ export class GridworldGame {
         if (assetsLoc === null) {
             assetsLoc = "assets/"
             // To make deployment expedient
-            //assetsLoc = "https://mturk.nickwalker.us/attribution/batch/4/assets/"
+            // assetsLoc = "https://mturk.nickwalker.us/attribution/evaluation/1/assets/"
         }
         this.assetsPath = assetsLoc;
         this.scene = new GridworldScene(this, tileSize, mapName, terrain)
@@ -233,7 +228,6 @@ export class GridworldScene extends Phaser.Scene {
 
     drawLevel() {
         const map = this.map
-        this.game.scale.resize(map.width * map.tileWidth, map.height * map.tileHeight)
         const tileset = map.addTilesetImage('interior_tiles', 'interior_tiles');
 
         const ground = map.createStaticLayer('ground_walls', tileset, 0, 0);
@@ -256,6 +250,7 @@ export class GridworldScene extends Phaser.Scene {
             })
 
         }
+        this.game.scale.resize(map.width * map.tileWidth, map.height * map.tileHeight)
 
     }
 

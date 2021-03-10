@@ -157,7 +157,7 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
             this.diffs.push(new GridworldState([{x: current.x - prev.x, y: current.y - prev.y}]))
         }
 
-        this.game = new GridworldGame( this.gameContainer, 32, null, this.getAttribute("map-name"),terrain)
+        this.game = new GridworldGame( this.gameContainer, null, null, this.getAttribute("map-name"),terrain)
         this.game.init();
         this.game.sceneCreatedDelegate = () => {
             this.freezeFrame(() => {
@@ -169,7 +169,10 @@ export class GridworldTrajectoryPlayer extends HTMLElement {
     }
 
     configureRecorder() {
-        const options = {mimeType: "video/webm; codecs=vp9"};
+        // 5000kbps
+        // Chrome ignores bitrate, but Firefox doesn't. Firefox won't encode VP9 though.
+        // So to get good quality, high bitrate vp8 -> ffmpeg compress to VP9
+        const options = {mimeType: "video/webm; codecs=vp8",videoBitsPerSecond: 5000000};
 
         let stream = this.shadow.querySelector("canvas").captureStream(25);
         this.recorder = new MediaRecorder(stream, options);

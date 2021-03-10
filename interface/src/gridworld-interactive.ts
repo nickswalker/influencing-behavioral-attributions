@@ -103,7 +103,7 @@ export class GridworldInteractive extends HTMLElement {
             mapName = this.getAttribute("map-name")
         }
         this.trajectory = []
-        this.game = new GridworldGame(this.gameContainer, 32, null, mapName, terrain)
+        this.game = new GridworldGame(this.gameContainer, null, null, mapName, terrain)
         this.game.sceneCreatedDelegate = () => {
             this.game.scene.interactive = true
             this.game.scene.reset()

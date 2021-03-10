@@ -51,6 +51,9 @@
             .replace(/\)/g, ']')
         );
         features = data["features"]
+        if (features === undefined) {
+            features = []
+        }
         setTraj(i)
     })
 
@@ -94,13 +97,21 @@
         const readyHandler = () =>{
             player.configureRecorder()
             player.recorder.addEventListener("stop", ()=> {
-                player.download(String(vidIndex));
+                player.download(vidIndex.toString());
                 recordAndAdvance();
             })
             player.play()
             player.removeEventListener("ready",readyHandler)
         }
         player.addEventListener("ready", readyHandler)
+
+        const displayReadyHandler = () =>{
+            display.download(vidIndex.toString())
+            display.removeEventListener("ready",displayReadyHandler)
+        }
+        display.addEventListener("ready", displayReadyHandler)
+
+
         setTraj(i)
         const vidIndex = i
         i++
@@ -122,9 +133,10 @@
     document.getElementById("download").addEventListener("click", ()=> {
         const vidIndex = i
         player.game.game.events.once("postrender", () =>{
+            display.download(vidIndex.toString())
             player.configureRecorder()
             player.recorder.addEventListener("stop", ()=> {
-                player.download(String(vidIndex));
+                player.download(vidIndex.toString());
             })
             player.play()
         })
