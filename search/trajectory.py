@@ -73,10 +73,12 @@ class TrajectoryNode:
 
             for next_point in accessible_points:
                 new_trajectory = copy.deepcopy(plan)
+                # Cut to before the original next point, and then a little further up to cut off the original next point
                 prefix, suffix = new_trajectory[:i + 1], new_trajectory[i + 2:]
                 connection = astar(PointNode(next_point), PointNode(suffix[0]), grid, manhattan)
                 raw_connection = list(map(lambda x: x.point, connection))
                 joined = prefix + raw_connection[:-1] + suffix
+                # Control  exploration: no trajs longer than 250
                 if len(joined) > 250:
                     continue
                 new_node = TrajectoryNode(joined, None)
@@ -100,7 +102,7 @@ class TrajectoryNode:
                 connection = astar(PointNode(prefix[-1]), PointNode(suffix[0]), grid, manhattan)
                 raw_connection = list(map(lambda x: x.point, connection))
                 joined = prefix + raw_connection[1:-1] + suffix
-            # Control  exploration
+            # Control  exploration: no trajs longer than 250
             if len(joined) > 250:
                 continue
             new_node = TrajectoryNode(joined, None)

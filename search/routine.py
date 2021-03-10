@@ -70,7 +70,7 @@ def astar(start, goal, grid, heuristic=manhattan):
     raise ValueError('No Path Found')
 
 
-def hill_descend(start, goal, grid, heuristic=manhattan, tolerance=8, max_tries=1000, branch_limit=200):
+def hill_descend(start, goal, grid, heuristic=manhattan, tolerance=8, max_tries=1000, branch_limit=200, verbose=True):
     # The open and closed sets
     frontier = PriorityQueue()
     openset = set()
@@ -84,7 +84,7 @@ def hill_descend(start, goal, grid, heuristic=manhattan, tolerance=8, max_tries=
     openset.add(current)
     open_counter = 0
 
-    with tqdm(total=max_tries) as pbar:
+    with tqdm(total=max_tries, disable=not verbose) as pbar:
         # While the open set is not empty
         while not frontier.empty():
             if len(closedset) >= max_tries:
@@ -125,6 +125,86 @@ def hill_descend(start, goal, grid, heuristic=manhattan, tolerance=8, max_tries=
                     # If it isn't in the open set, calculate the G and H score for the node
                     node.G = current.G + current.move_cost(node)
                     node.H = heuristic(node, goal)
+                    # print(node.G, node.H)
+
+                    # Set the parent to our current item
+                    node.parent = current
+                    open_counter += 1
+                    # Add it to the set
+                    frontier.put((node.G + node.H, node))
+                    openset.add(node)
+
+    path = []
+    while current.parent:
+        path.append(current)
+        current = current.parent
+    path.append(current)
+    # print("Opened {} nodes".format(open_counter))
+    return path[::-1]
+
+
+def batch_hill_descend(starts, goal, grid, heuristic=manhattan, tolerance=8, max_tries=1000, branch_limit=200, verbose=True):
+    # The open and closed sets
+    frontier = PriorityQueue()
+    openset = set()
+    closedset = set()
+
+    # Current point is the starting point
+
+    h = heuristic(starts, goal)
+    current = starts[h.argmin()]
+    #print("Selected best start")
+    #print(current.trajectory)
+    current.H = h.min()
+    # Add the starting point to the open set
+    frontier.put((0, current))
+    openset.add(current)
+    open_counter = 0
+
+    with tqdm(total=max_tries, disable=not verbose) as pbar:
+        # While the open set is not empty
+        while not frontier.empty():
+            if len(closedset) >= max_tries:
+                current = min(set([*closedset, *openset]), key=lambda o: o.H)
+                break
+            pbar.update(1)
+            # Find the item in the open set with the lowest G + H score
+            value, current = frontier.get()
+
+            openset.remove(current)
+
+            # If it is the item we want, retrace the path and return it
+            if current.H < tolerance:
+                break
+
+            # Add it to the closed set
+            closedset.add(current)
+
+            # Loop through the node's children/siblings
+            neighbors = current.neighbors(grid)
+
+            # About the practical limit for branching and reasonable search times
+            if len(neighbors) > branch_limit:
+                neighbors = random.sample(neighbors, branch_limit)
+            # Batch the call to the heuristic
+            h = heuristic(neighbors, goal)
+            for i, node in enumerate(neighbors):
+                # If it is already in the closed set, skip it
+                if node in closedset:
+                    continue
+
+                # Otherwise if it is already in the open set
+                if node in openset:
+                    # Check if we beat the G score
+                    new_g = current.G + current.move_cost(node)
+                    if node.G > new_g:
+                        # If so, update the node to have a new parent
+                        node.G = new_g
+                        node.parent = current
+                else:
+                    # If it isn't in the open set, calculate the G and H score for the node
+                    node.G = current.G + current.move_cost(node)
+                    node.H = h[i]
                     # print(node.G, node.H)
 
                     # Set the parent to our current item

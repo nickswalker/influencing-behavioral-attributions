@@ -18,6 +18,8 @@ START_STOPINESS = 10
 
 
 def trajectory_features(goal, grid, plan):
+    if len(plan) == 0:
+        return (0,0,0,0,0,0,0,0,0,0,0)
     # How many unique states do we visit as a percentage of the plan length (0,1]
     self_overlap = 1. - len(set(plan)) / len(plan)
     # [0,1]
@@ -129,3 +131,16 @@ class CoverageNode:
             new_node = CoverageNode(to_cover, point, grid[point[1]][point[0]])
             neighbors.append(new_node)
         return neighbors
+
+
+def trajectory_cost(goal, grid, plan):
+    step_cost = len(plan)
+    states_in_coverage_zone = set([p for p in plan if p in goal])
+    num_missed = len(set(goal).difference(set(plan)))
+    breakage = 0
+    for point in plan:
+        contents = grid[point[1]][point[0]]
+        if contents == "O":
+            breakage += 5
+
+    return step_cost + breakage - len(states_in_coverage_zone) + num_missed

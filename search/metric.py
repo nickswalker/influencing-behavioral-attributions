@@ -43,4 +43,4 @@ def coverage_manhattan(node, goal):
         # How long is it going to take to return to the start position
         furthest_point = node.to_cover[dists.index(max(dists))]
         dists.append(abs(furthest_point[0] - goal.point[0]) + abs(furthest_point[1] - goal.point[1]))
-    return min(dists) + len(dists)
+    return max(dists) + len(dists)

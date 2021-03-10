@@ -9,7 +9,7 @@ from scipy import spatial
 from search.routine import astar
 from search.coverage import trajectory_features, CoverageNode
 from search.metric import coverage_manhattan
-from search.sampling import sample_diverse, sample_random_goal_neighbor
+from search.sampling import sample_diverse, sample_perturb_neighbor_pool
 from search.trajectory import TrajectoryNode
 from search.util import load_map, shelve_it, pretty_plan
 
@@ -94,7 +94,7 @@ if __name__ == '__main__':
 
     print("Neighbors")
     # nei_trajs, nei_feats = sample_neighbors(pool, 2, grid)
-    nei_trajs = list(itertools.chain.from_iterable(sample_random_goal_neighbor(pool, 2, grid)))
+    nei_trajs = list(itertools.chain.from_iterable(sample_perturb_neighbor_pool(pool, 2, grid, featurizer)))
     nei_feats = np.array(list(map(TrajectoryNode.featurizer, nei_trajs)))
     print("Mean manhat diff: {}".format(spatial.distance.pdist(nei_feats, "cityblock").mean()))
 
