@@ -1,0 +1,606 @@
+<!-- You must include this JavaScript file -->
+<script src="https://assets.crowd.aws/crowd-html-elements.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mustache.js/3.0.1/mustache.js" integrity="sha256-eWzD4VoILNfodzTHdCIMKX/k47LcM3hmpTfFhAR7Cj0=" crossorigin="anonymous"></script>
+<script src="https://cdn.plyr.io/3.6.2/plyr.js"></script>
+<script src="//cdn.jsdelivr.net/npm/phaser@3.24.1/dist/phaser.js"></script>
+<link rel="stylesheet" href="https://cdn.plyr.io/3.6.2/plyr.css" />
+
+<!-- Seedable version of Math.random -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/seedrandom/3.0.1/seedrandom.min.js" integrity="sha256-qWhoVRXiPqipUCqo3Tl0NGx/o56OREtG1aaxJIOCSNs=" crossorigin="anonymous"></script>
+
+
+
+<script>
+    function submitPage(evt) {
+        evt.preventDefault();
+        next();
+        return false;
+    }
+
+</script>
+
+
+<style>
+    html {
+        padding: 24px;
+    }
+    .red {
+        color: red;
+    }
+    .green {
+        color: green;
+    }
+    .blue {
+        color: blue;
+    }
+    crowd-input {
+        margin-top: -16px;
+        margin-bottom: 16px;
+    }
+
+    #page-container {
+        padding-bottom: 72px;
+    }
+    #controls {
+        position: -webkit-sticky;
+        position: sticky;
+        bottom: 0;
+        right: 0;
+        background-color: rgba(255,255, 255,.8);
+    }
+    #controls > * {
+        display: inline-block;
+    }
+
+    p, crowd-input, img, video{
+        max-width: 700px;
+    }
+
+    /* form */
+    fieldset {
+        display: flex;
+        margin: 0;
+        padding: 9px 6px;
+        border: none;
+    //border-bottom: 1px solid #ccc;
+    }
+    .page fieldset:nth-of-type(2n) {
+        background-color: #f0f0f0;
+    }
+    .page fieldset.finished {
+        background-color: #ecf9ec;
+    }
+    .page fieldset.finished:nth-of-type(2n) {
+        background-color: #d3ebd3;
+    }
+    fieldset > span {
+        display: inline-block;
+        width: 100px;
+        padding: 0;
+        font-weight: bold;
+    }
+    fieldset > span:first-of-type {
+        text-align: left;
+    }
+    fieldset > input {
+        margin: 0;
+        padding: 0;
+    }
+
+    fieldset input[type=radio] {
+        max-width: 100px;
+        height: 24px;
+        flex: auto;
+    }
+
+    fieldset input[type="radio"]:nth-of-type(6) {
+        margin-left: 48px;
+    }
+
+    fieldset > label {
+        padding: 0;
+        margin-right: 12px;
+        display: none;
+    }
+
+    .labels {
+        display: flex;
+    }
+    .labels > div {
+        flex: auto;
+    //transform: rotate(-45deg);
+        max-width: 100px;
+        text-align: center;
+    }
+
+    .labels > div:nth-of-type(7) {
+        margin-left: 48px;
+    }
+
+    .labels > .spacer {
+        width: 100px;
+        flex: none;
+    }
+
+    .demonstration {
+        margin-bottom: 24px;
+    }
+    .demonstration > p {
+        margin: 0;
+    }
+
+    /* video player */
+
+    .plyr {
+        width:800px;
+        height: 450px;
+        --plyr-color-main: white;
+        --plyr-video-control-color-hover:#888
+    }
+
+    .plyr.requires-finished-to-seek.unwatched .plyr__progress {
+        opacity: 0;
+        transition: opacity 0.3s;
+    }
+
+    .plyr__control--overlaid {
+        background: rgba(127,127,127, .8);
+    }
+
+    gridworld-interactive {
+        border-left: 6px solid red;
+        display: block;
+        transform: scale(0.75);
+        margin: -72px -150px;
+    }
+    gridworld-interactive.finished {
+        border-left: 6px solid #408c40;
+    }
+    crowd-input.finished {
+        background-color: #d3ebd3;
+    }
+
+    input[name=conditionOrdering], input[name=questionOrdering] {
+        display: none
+    }
+
+    .choice {
+        display: flex;
+    }
+    .choice > * {
+        align-self: center;
+    }
+    .choice label {
+        margin-right: 12px;
+    }
+    .choice > img {
+        display: inline-block;
+        width: 400px;
+    }
+    .choice .video-container {
+        display: inline-block;
+        margin-right: 12px;
+    }
+    .choice .plyr {
+        width: 400px;
+        height: 270px;
+    }
+
+</style>
+
+<template id="questions">
+    <p>What three words would you use to describe robot {{robotNumber}}'s motion?</p>
+    <crowd-input {{required}} name="con_{{ condition }}_describe" class="min-length-10"></crowd-input>
+
+    <p>Rate your agreement with the statement for each word:</p>
+    <h3>"The robot is..."</h3>
+    <div class="scales">
+        <div class="labels">
+            <div class="spacer">  </div>
+            <div class="l1">Strongly disagree</div><div class="l2">Disagree</div> <div class="l3">Neither agree nor disagree </div>
+            <div class="l4">Agree</div><div class="l5">Strongly agree</div> <div class="l6">I don't know</div>
+        </div>
+        <div class="question-randomization-region">
+            <fieldset class="b1">
+                <span>Broken</span>
+                <input {{required}} type="radio" name="con_{{ condition }}_b1" value="yes1"><label>1</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b1" value="yes2"><label>2</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b1" value="yes3"><label>3</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b1" value="yes4"><label>4</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b1" value="yes5"><label>5</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b1" value="yes6"><label>N/A</label>
+            </fieldset>
+            <fieldset class="b2">
+                <span>Clumsy</span>
+                <input {{required}} type="radio" name="con_{{ condition }}_b2" value="yes1"><label>1</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b2" value="yes2"><label>2</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b2" value="yes3"><label>3</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b2" value="yes4"><label>4</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b2" value="yes5"><label>5</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b2" value="yes6"><label>N/A</label>
+            </fieldset>
+            <fieldset class="b3">
+                <span>Competent</span>
+                <input {{required}} type="radio" name="con_{{ condition }}_b3" value="yes1"><label>1</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b3" value="yes2"><label>2</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b3" value="yes3"><label>3</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b3" value="yes4"><label>4</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b3" value="yes5"><label>5</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b3" value="yes6"><label>N/A</label>
+            </fieldset>
+            <fieldset class="b4">
+                <span>Confused</span>
+                <input {{required}} type="radio" name="con_{{ condition }}_b4" value="yes1"><label>1</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b4" value="yes2"><label>2</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b4" value="yes3"><label>3</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b4" value="yes4"><label>4</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b4" value="yes5"><label>5</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b4" value="yes6"><label>N/A</label>
+            </fieldset>
+            <fieldset class="b5">
+                <span>Curious</span>
+                <input {{required}} type="radio" name="con_{{ condition }}_b5" value="yes1"><label>1</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b5" value="yes2"><label>2</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b5" value="yes3"><label>3</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b5" value="yes4"><label>4</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b5" value="yes5"><label>5</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b5" value="yes6"><label>N/A</label>
+            </fieldset>
+            <fieldset class="b6">
+                <span>Efficient</span>
+                <input {{required}} type="radio" name="con_{{ condition }}_b6" value="yes1"><label>1</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b6" value="yes2"><label>2</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b6" value="yes3"><label>3</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b6" value="yes4"><label>4</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b6" value="yes5"><label>5</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b6" value="yes6"><label>N/A</label>
+            </fieldset>
+            <fieldset class="b7">
+                <span>Energetic</span>
+                <input {{required}} type="radio" name="con_{{ condition }}_b7" value="yes1"><label>1</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b7" value="yes2"><label>2</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b7" value="yes3"><label>3</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b7" value="yes4"><label>4</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b7" value="yes5"><label>5</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b7" value="yes6"><label>N/A</label>
+            </fieldset>
+            <fieldset class="b8">
+                <span>Focused</span>
+                <input {{required}} type="radio" name="con_{{ condition }}_b8" value="yes1"><label>1</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b8" value="yes2"><label>2</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b8" value="yes3"><label>3</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b8" value="yes4"><label>4</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b8" value="yes5"><label>5</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b8" value="yes6"><label>N/A</label>
+            </fieldset>
+            <fieldset class="b9">
+                <span>Intelligent</span>
+                <input {{required}} type="radio" name="con_{{ condition }}_b9" value="yes1"><label>1</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b9" value="yes2"><label>2</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b9" value="yes3"><label>3</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b9" value="yes4"><label>4</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b9" value="yes5"><label>5</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b9" value="yes6"><label>N/A</label>
+            </fieldset>
+            <fieldset class="b15">
+                <span>Inquisitive</span>
+                <input {{required}} type="radio" name="con_{{ condition }}_b15" value="yes1"><label>1</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b15" value="yes2"><label>2</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b15" value="yes3"><label>3</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b15" value="yes4"><label>4</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b15" value="yes5"><label>5</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b15" value="yes6"><label>N/A</label>
+            </fieldset>
+            <fieldset class="b10">
+                <span>Investigative</span>
+                <input {{required}} type="radio" name="con_{{ condition }}_b10" value="yes1"><label>1</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b10" value="yes2"><label>2</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b10" value="yes3"><label>3</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b10" value="yes4"><label>4</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b10" value="yes5"><label>5</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b10" value="yes6"><label>N/A</label>
+            </fieldset>
+            <fieldset class="b11">
+                <span>Lazy</span>
+                <input {{required}} type="radio" name="con_{{ condition }}_b11" value="yes1"><label>1</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b11" value="yes2"><label>2</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b11" value="yes3"><label>3</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b11" value="yes4"><label>4</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b11" value="yes5"><label>5</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b11" value="yes6"><label>N/A</label>
+            </fieldset>
+            <fieldset class="b12">
+                <span>Lost</span>
+                <input {{required}} type="radio" name="con_{{ condition }}_b12" value="yes1"><label>1</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b12" value="yes2"><label>2</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b12" value="yes3"><label>3</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b12" value="yes4"><label>4</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b12" value="yes5"><label>5</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b12" value="yes6"><label>N/A</label>
+            </fieldset>
+            <fieldset class="b13">
+                <span>Reliable</span>
+                <input {{required}} type="radio" name="con_{{ condition }}_b13" value="yes1"><label>1</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b13" value="yes2"><label>2</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b13" value="yes3"><label>3</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b13" value="yes4"><label>4</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b13" value="yes5"><label>5</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b13" value="yes6"><label>N/A</label>
+            </fieldset>
+            <fieldset class="b14">
+                <span>Responsible</span>
+                <input {{required}} type="radio" name="con_{{ condition }}_b14" value="yes1"><label>1</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b14" value="yes2"><label>2</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b14" value="yes3"><label>3</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b14" value="yes4"><label>4</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b14" value="yes5"><label>5</label>
+                <input {{required}} type="radio" name="con_{{ condition }}_b14" value="yes6"><label>N/A</label>
+            </fieldset>
+
+        </div>
+    </div>
+
+
+    <p>Please briefly explain the factors that contributed to your strongest rating:</p>
+    <crowd-input {{required}} name="con_{{condition}}_explain" class="min-length-10"></crowd-input>
+
+</template>
+
+<template id="attribution">
+    <div class="page attribution">
+        <h2>Robot {{ robotNumber }}</h2>
+        <div class="video-container">
+            <video controls disablePictureInPicture src="https://mturk.nickwalker.us/attribution/evaluation/0/{{ trajectoryId }}.webm" class="{{ unwatched }} requires-finished-to-seek"></video>
+        </div>
+        <div class="questions">
+
+        </div>
+    </div>
+</template>
+
+
+<!-- You must include crowd-form so that your task submits answers to MTurk -->
+<crowd-form answer-format="flatten-objects">
+
+    <div id="page-container">
+
+        <div class="page welcome">
+            <h1>Welcome</h1>
+
+            <p>This HIT involves watching and rating 5 videos of robots cleaning a bedroom, then answering some questions comparing the different videos.</p>
+            
+            <img src="https://mturk.nickwalker.us/attribution/evaluation/0/assets/environment.png">
+            <!--img src="assets/environment.png"-->
+            <p>
+                At the end, we'll ask your age and gender. Note that before we accept your work, we'll check for indications that you didn't follow instructions</p>
+            <p>The whole task should take 14 minutes.
+                This HIT is designed to be compatible with recent version of desktop Chrome and Firefox. <b>It does not support mobile devices or Safari</b>.</p>
+
+            <p>You <b class="red">cannot</b> complete <b>this HIT</b> multiple times, but you <b class="green">can complete it once even if you've rated robots for us in other HITs before.</b>
+                <ul>
+            <li>If you <b>have</b> seen this image before, <b class="red">you've probably already done this HIT</b>! Just wait for another batch with a different image.</li>
+            <li>If you <b>have not</b> seen this specific image before, <b class="green">this HIT is new to you</b>, so please proceed.</li>
+        </ul>
+                <img src="https://picsum.photos/seed/batch0-${goalAttribution}/300/200"/>
+            </p>
+
+
+            <p>The next pages describe this research and the data collected in more detail.</p>
+        </div>
+
+        <div class="page qualification">
+            <h2>Qualification</h2>
+            <p>Are you an employee of the University of Washington, family member of a UW employee, or UW student involved in this particular research? </p>
+            <crowd-radio-group id="qualification">
+                <crowd-radio-button name="qualification1" value="yes">I am</crowd-radio-button>
+                <crowd-radio-button name="qualification2" value="no">I am not</crowd-radio-button>
+            </crowd-radio-group>
+        </div>
+
+        <div class="page irb">
+            <h3>UNIVERSITY OF WASHINGTON<br />
+                CONSENT FORM<br />
+                ONLINE SURVEY - PERCEPTIONS OF A ROBOT</h3>
+
+            <h3>Researchers' statement</h3>
+            <p>We are asking you to be in a research study. The purpose of this consent form is to give you the information you will need to help you decide whether to be in the study or not. Please read the form carefully. You may ask questions about the purpose of the research, what we would ask you to do, the possible risks and benefits, your rights as a volunteer, and anything else about the research or this form that is not clear. When we have answered all your questions, you can decide if you want to be in the study or not. This process is called "informed consent."</p>
+
+            <h3>PURPOSE OF THE STUDY</h3>
+            <p>This project aims to better understand how people perceive task-oriented robots. We are evaluating how different behaviors impact the perception of a robot.</p>
+
+            <h3>STUDY PROCEDURES</h3>
+            <p>In this study, you will be asked to watch clips and organize them into groups. After you have grouped them, you'll be asked to describe the groups. At the end, you will be asked to answer additional questions about the clips you saw. The study will take about 15 minutes total.</p>
+
+            <h3>RISKS, STRESS, OR DISCOMFORT</h3>
+            <p>This study does not present any risks that are greater than those of daily activities that involve using a personal computer or laptop. </p>
+            <h3>BENEFITS OF THE STUDY</h3>
+            <p>This research will inform the design of intelligent robots. You will not individually benefit from participation in the study.</p>
+
+            <h3>SOURCE OF FUNDING</h3>
+            <p>The study team and/or the University of Washington is receiving financial support from Honda Research Institute.</p>
+
+            <h3>OTHER INFORMATION</h3>
+            <p>You may refuse to participate and you are free to withdraw from this study at any time without penalty or loss of benefits to which you are otherwise entitled.</p>
+
+            <h3>CONFIDENTIALITY OF RESEARCH INFORMATION</h3>
+            <p>All of the information you provide will be confidential. There will be no association between your name and the answers you provide. The recordings will be analyzed by our research team to assess the effectiveness of the different behaviors used by the robot. Sample videos or snapshots from these recordings may be used in scientific articles or talks.</p>
+        </div>
+
+
+        <div class="page">
+            <h2>Instructions: Rating robots</h2>
+            <p>In this part you'll look at videos showing a robot vacuum cleaner that's been asked to clean the bedroom. We'll ask you to rate each robot on several scales. You'll repeat this for a total of 4 videos.</p>
+
+            <ul>
+                <li>Once a video has played once, you can scrub through it or restart it if you need to watch it again</li>
+                <li> It's okay if you don't know how to rate a certain question; mark it "I don't know"</li>
+                <li>You <b>may use the "tab", arrow and space keys to quickly navigate</b> and select from the ratings control buttons</li>
+            </ul>
+
+        </div>
+        <div class="page warm-up">
+            <h2>Warm up</h2>
+
+            <p>Please watch this instructional video. All of the questions you'll be asked for each video are shown below. <b>Responses on this page are optional</b>, so please continue to the next page once you are familiar with the playback controls and questions.</p>
+
+            <div class="video-container">
+                <video controls disablePictureInPicture src="https://mturk.nickwalker.us/attribution/evaluation/0/assets/example.webm" class="requires-finished-to-seek unwatched"></video>
+            </div>
+
+            <div class="questions">
+
+            </div>
+        </div>
+
+        <div class="page">
+            <p>The remaining videos and questions are part of the task. Please refer back to the instructions if you need to.</p>
+        </div>
+        <div id="attribution-insertion-region">
+
+        </div>
+
+        <div class="page comparison">
+            <h2>Comparison: Most ${goalAttribution}</h2>
+            <p>Now that you've seen the four robots, we'll ask you to compare them.</p>
+
+            <p><b>Which robot seemed the most ${goalAttribution}?</b></p>
+
+            <div class="choice">
+                <input type="radio" id="most1" name="most" value="1" required>
+                <label for="most1">Robot 1</label>
+                <div class="video-container">
+                    <video controls disablePictureInPicture src="https://mturk.nickwalker.us/attribution/evaluation/0/${id0}.webm"></video>
+                </div>
+                <img src="https://mturk.nickwalker.us/attribution/evaluation/0/${id0}.png"/>
+            </div>
+
+            <div class="choice">
+                <input type="radio" id="most2" name="most" value="2" required>
+                <label for="most2">Robot 2</label>
+                <div class="video-container">
+                    <video controls disablePictureInPicture src="https://mturk.nickwalker.us/attribution/evaluation/0/${id1}.webm"></video>
+                </div>
+                <img src="https://mturk.nickwalker.us/attribution/evaluation/0/${id1}.png"/>
+            </div>
+
+            <div class="choice">
+                <input type="radio" id="most3" name="most" value="3" required>
+                <label for="most3">Robot 3</label>
+                <div class="video-container">
+                    <video controls disablePictureInPicture src="https://mturk.nickwalker.us/attribution/evaluation/0/${id2}.webm"></video>
+                </div>
+                <img src="https://mturk.nickwalker.us/attribution/evaluation/0/${id2}.png"/>
+            </div>
+
+            <div class="choice">
+                <input type="radio" id="most4" name="most" value="4" required>
+                <label for="most4">Robot 4</label>
+                <div class="video-container">
+                    <video controls disablePictureInPicture src="https://mturk.nickwalker.us/attribution/evaluation/0/${id3}.webm"></video>
+                </div>
+                <img src="https://mturk.nickwalker.us/attribution/evaluation/0/${id3}.png"/>
+            </div>
+
+            <p>Please briefly explain why:</p>
+            <crowd-input required name="most_explain" class="min-length-10"></crowd-input>
+
+        </div>
+
+        <div class="page comparison">
+            <h2>Comparison: Least ${goalAttribution}</h2>
+            <p>Now that you've seen the four robots, we'll ask you to compare them.</p>
+
+            <p><b>Which robot seemed the least ${goalAttribution}?</b></p>
+
+            <div class="choice">
+            <input type="radio" id="least1" name="least" value="1" required>
+            <label for="least1">Robot 1</label>
+            <div class="video-container">
+                <video controls disablePictureInPicture src="https://mturk.nickwalker.us/attribution/evaluation/0/${id0}.webm"></video>
+            </div>
+            <img src="https://mturk.nickwalker.us/attribution/evaluation/0/${id0}.png"/>
+            </div>
+
+            <div class="choice">
+            <input type="radio" id="least2" name="least" value="2" required>
+            <label for="least2">Robot 2</label>
+            <div class="video-container">
+
+                <video controls disablePictureInPicture src="https://mturk.nickwalker.us/attribution/evaluation/0/${id1}.webm"></video>
+            </div>
+            <img src="https://mturk.nickwalker.us/attribution/evaluation/0/${id1}.png"/>
+            </div>
+
+            <div class="choice">
+            <input type="radio" id="least3" name="least" value="3" required>
+            <label for="least3">Robot 3</label>
+            <div class="video-container">
+                <video controls disablePictureInPicture src="https://mturk.nickwalker.us/attribution/evaluation/0/${id2}.webm"></video>
+            </div>
+            <img src="https://mturk.nickwalker.us/attribution/evaluation/0/${id2}.png"/>
+            </div>
+
+            <div class="choice">
+            <input type="radio" id="least4" name="least" value="4" required>
+            <label for="least4">Robot 4</label>
+            <div class="video-container">
+                <video controls disablePictureInPicture src="https://mturk.nickwalker.us/attribution/evaluation/0/${id3}.webm"></video>
+            </div>
+            <img src="https://mturk.nickwalker.us/attribution/evaluation/0/${id3}.png"/>
+            </div>
+
+            <p>Please briefly explain why:</p>
+            <crowd-input required name="least_explain" class="min-length-10"></crowd-input>
+
+        </div>
+
+        <div class="page demographics">
+            <h2>Demographics</h2>
+            <crowd-input autovalidate required name="age" placeholder="Age" type="number"></crowd-input>
+            <crowd-input autovalidate required name="gender" placeholder="Gender"></crowd-input>
+            <crowd-input autovalidate required name="ownership" placeholder="Do you own, or have you previously owned, a robot vacuum?"></crowd-input>
+
+        </div>
+
+        <div class="page thanks">
+            <p>Thank you for doing our HIT!</p>
+            <p><strong>Comment (optional):</strong>
+                <crowd-input name="comment"
+                             placeholder="Let us know any comments or feedback you have on this HIT"></crowd-input>
+            </p>
+            <p><b>Note: The submit button won't work unless you've filled out every required input!</b></p>
+
+
+            <crowd-button form-action="submit" variant="primary">Submit</crowd-button>
+
+            <h3>Reminder</h3>
+            <p>You <b class="red">cannot</b> complete <b>this HIT</b> multiple times. This image is tied to this HIT.
+                If you see the same image on one of our HITs again, you've aleady done the HIT
+            <img src="https://picsum.photos/seed/batch0-${goalAttribution}/300/200"/>
+            </p>
+
+        </div>
+
+    </div>
+
+    <div id="controls">
+        <input onclick="back()" type="button" value="Back" name="noop"/>
+        <p id="page-number">1</p>
+        <input onclick="submitPage(event)" type="button" value="Next" name="noop1"/>
+    </div>
+    <input type="text" name="questionOrdering">
+</crowd-form>
+
+<script>
+    window.trajectoryIds = [0, 1, 2 ,3]
+    //window.trajectoryIds = [${id0}, ${id1}, ${id2},${id3}]
+    window.goalAttribution = "curious"
+    //window.goalAttribution = "${goalAttribution}"
+</script>
+
+<script src="dist/vendors.bundle.js" type="module"></script>
+<script src="dist/evaluation.bundle.js" type="module"></script>
+
+<!--
+<script src="https://mturk.nickwalker.us/attribution/evaluation/0/dist/vendors.bundle.js" type="module"></script>
+<script src="https://mturk.nickwalker.us/attribution/evaluation/0/dist/evaluation.bundle.js" type="module"></script>

@@ -1,9 +1,12 @@
 const path = require('path');
+// TODO():https://github.com/jantimon/html-webpack-plugin Pack to single file for MTurk upload
+
 // https://2ality.com/2020/04/webpack-typescript.html
 module.exports = {
     mode: "development",
     entry: {
         "interactive": "./src/interactive-index.ts",
+        "evaluation": "./src/evaluation-index.ts",
         "batch": "./src/batch-index.ts",
         "browse-batch": "./src/browse-batch-index.ts",
         "sorting": './src/sorting-index.ts',
