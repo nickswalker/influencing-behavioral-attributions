@@ -8,7 +8,7 @@ declare global {
 
     }
     interface Plyr {
-        setup(selector: any, options:any): any
+        constructor (selector: any, options:any): any
     }
     interface Math {
         seedrandom(seed: number): any
@@ -25,11 +25,26 @@ let debugMode = false
 function render(attributions: string[], trajectoryIds: number[]) {
     let attributionInsertionContainer = document.querySelector("#attribution-insertion-region")
     let conditionTemplate = document.querySelector("#attribution").innerHTML;
+    let questionsTemplate = document.querySelector("#questions").innerHTML;
 
     for (let i = 0; i < trajectoryIds.length; i++) {
-        let condition = Mustache.render(conditionTemplate, {"trajectoryId": String(trajectoryIds[i]), "condition": String(i), "robotNumber": String(i + 1), "required":"required", "unwatched": "unwatched"})
+        let condition = Mustache.render(conditionTemplate,
+            {"trajectoryId": String(trajectoryIds[i]),
+                "condition": String(i),
+                "robotNumber": String(i + 1),
+                "required":"required",
+                "unwatched": "unwatched"})
         attributionInsertionContainer.innerHTML += condition;
+        let questions = Mustache.render(questionsTemplate,{"trajectoryId": String(trajectoryIds[i]),
+            "condition": String(i),
+            "robotNumber": String(i + 1),
+            "required":"required"})
+        attributionInsertionContainer.querySelector(".page:last-of-type .questions").innerHTML += questions
     }
+    let warmupQuestions = Mustache.render(questionsTemplate,{
+        "condition": "9999",
+        "robotNumber": ""})
+    document.querySelector(".warm-up .questions").innerHTML += warmupQuestions
 
     let demonstrationInsertionContainer = document.querySelector("#demonstration-insertion-region")
     let demonstrationTemplate = document.querySelector("#demonstration").innerHTML;
@@ -52,18 +67,31 @@ function addDemoListeners(attributions: string[]) {
 }
 
 function addVideoListeners() {
-    let allVideoSections = document.querySelectorAll(".video-container")
-    for (let i = 0; i < allVideoSections.length; i++) {
-        let videoSection = allVideoSections[i];
-        let video = videoSection.querySelector("video");
-        let restartControl = videoSection.querySelector(".video-controls .restart")
-        restartControl.addEventListener("click", function(){
-            video.currentTime = 0
+    document.querySelectorAll(".video-container").forEach((container: any) =>{
+        let video = container.querySelector("video")
+
+        // @ts-ignore
+        let plyr = new Plyr(video, {"displayDuration": false,
+            tooltips: { controls: true, seek: false},
+            controls: ['play-large', 'play', 'progress', 'restart'],
+            listeners: {
+                seek: (e:any) => {
+                    if (!(plyr.media.classList.contains("requires-finished-to-seek") && plyr.media.classList.contains("unwatched"))){
+                        return true;
+                    }
+                    e.preventDefault();
+                    console.log(`prevented`);
+                    return false;
+                }
+            }
+        });
+        plyr.elements.container.classList += " " + plyr.media.classList
+
+        plyr.once("ended", (e:any)=>{
+            plyr.media.classList.remove("unwatched")
+            plyr.elements.container.classList.remove("unwatched")
         })
-        video.addEventListener("ended", function(){
-            video.classList.remove("unwatched")
-        })
-    }
+    })
 }
 
 function nameAllInputs() {
@@ -117,7 +145,7 @@ function validateNext(page: HTMLElement) : string {
                 return "Please watch the full video before continuing";
             }
         }
-        let radioGroups = page.querySelectorAll("crowd-radio-group");
+        let radioGroups = page.querySelectorAll("fieldset");
         let formValid = true;
         for (let i = 0; i < radioGroups.length; i++) {
             let radioGroup = radioGroups[i]
@@ -142,6 +170,12 @@ function validateNext(page: HTMLElement) : string {
         formValid = formValid && missingDescribe.length === 0 && missingExplain.length === 0
         if (!formValid) {
             return "Please respond to all required questions before continuing";
+        }
+    } else if (page.classList.contains("warm-up")) {
+        let currentVideo = page.querySelector("video");
+        if (currentVideo && currentVideo.classList.contains("unwatched")) {
+            return "Please watch the full video before continuing";
+
         }
     } else if (page.classList.contains("demonstrations")) {
         let anyUnfinished = page.querySelectorAll(".finished").length < page.querySelectorAll("gridworld-interactive").length
@@ -192,6 +226,29 @@ function randomizeQuestionOrder(){
     return allOrderings
 }
 
+function addFinishedListeners(){
+    document.querySelectorAll("fieldset input[type=radio]").forEach((radioButton: Element) => {
+        radioButton.addEventListener("change",()=>
+        {
+            radioButton.parentElement.classList.add("finished")
+        })
+    })
+
+    document.querySelectorAll<HTMLInputElement>("crowd-input").forEach((input: HTMLInputElement) => {
+        input.addEventListener("keyup", ()=>{
+            if (!input.classList.contains("min-length-10")){
+                return true;
+            }
+            if (input.value.length >= 10 ) {
+                input.classList.add("finished")
+            } else {
+                input.classList.remove("finished")
+            }
+        })
+    })
+
+}
+
 document.addEventListener('keydown', function(event) {
     if (event.ctrlKey && event.key === 'p') {
         debugMode = !debugMode
@@ -203,11 +260,14 @@ document.addEventListener('keydown', function(event) {
     }
 });
 
-
 render(window.attributions,window.trajectoryIds)
-randomizeQuestionOrder()
-Plyr.setup('video', {"displayDuration": false, tooltips: { controls: false, seek: false}, controls: ['play-large', 'play', 'progress']});
+let questionOrdering = randomizeQuestionOrder()
 addVideoListeners()
 addDemoListeners(window.attributions)
+
+let questionOrderingInput = document.querySelector<HTMLInputElement>("input[name=questionOrdering]")
+questionOrderingInput.value = questionOrdering[0].toString()
 nameAllInputs()
-setUpPages(document.getElementById("task"), validateNext)
+setUpPages(document.getElementById("page-container"), validateNext)
+
+addFinishedListeners()
