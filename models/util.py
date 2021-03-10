@@ -32,9 +32,12 @@ def gen_samples(population, n, per_hit):
 def load_trajectory_pool(file_name):
     with open(file_name) as f:
         data = json.load(f)
+    if "features" in data.keys():
+        import numpy as np
+        return ast.literal_eval(data["trajectories"]), np.stack(data["features"])
+    else:
+        return ast.literal_eval(data["trajectories"]), None
 
-    import numpy as np
-    return ast.literal_eval(data["trajectories"]), np.stack(data["features"])
 
 
 def load_demo_pool(file_names):
@@ -141,7 +144,11 @@ def process_turk_files(paths, filter_rejected=True, traj_file=None):
 
 question_code_to_name = {"b1": "broken", "b2": "clumsy", "b3": "competent", "b4": "confused", "b5": "curious",
                          "b6": "efficient", "b7": "energetic", "b8": "focused", "b9": "intelligent",
-                         "b10": "investigative", "b11": "lazy", "b12": "lost", "b13": "reliable", "b14": "responsible"}
+                         "b10": "investigative", "b11": "lazy", "b12": "lost", "b13": "reliable", "b14": "responsible", "b15": "inquisitive"}
+old_question_names = sorted(list([question_code_to_name[f"b{i}"] for i in range(1,15)]))
+short_question_names = sorted(list([question_code_to_name[f"b{i}"] for i in range(1,15)]))
+short_question_names.remove("energetic")
+short_question_names.remove("lazy")
 question_names = sorted(list(question_code_to_name.values()))
 feature_names = ["goal_cov",
                  "overlap",
