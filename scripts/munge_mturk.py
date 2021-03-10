@@ -1,4 +1,5 @@
 import glob
+import itertools
 import json
 import os
 
@@ -13,16 +14,13 @@ from joblib import load, dump
 
 from matplotlib.backends.backend_pdf import PdfPages
 
-import krippendorff
-
 from models.plotting import plot_histograms, make_scatterplot, make_fa_plots, make_conf_mat_plots, make_density
-from models.simple import fit_lin_reg, fit_svm, bin_factor_score, bin_likert, fit_mlp, fit_mlp_regressor, fit_log_reg, \
-    fit_knn
-from models.util import process_turk_files, question_names, feature_names
+from models.simple import fit_lin_reg
+from models.util import process_turk_files, question_names, feature_names, old_question_names, short_question_names
 
 factor_structure = {"competent":
-                        ["competent", "efficient", "energetic", "focused", "intelligent", "reliable", "responsible"],
-                    "broken": ["broken", "clumsy", "confused", "lazy", "lost"],
+                        ["competent", "efficient", "focused", "intelligent", "reliable", "responsible"],
+                    "broken": ["broken", "clumsy", "confused", "lost"],
                     "curious": ["curious", "investigative"]
                     }
 
@@ -34,15 +32,17 @@ demo_trajs = []
 demo_exps = []
 demo_prompts = []
 demo_wids = []
-for base in ["pilot1","active1","active2"]:
+#for base in ["mdn_active1", "mdn_active2"]:
+for base in ["pilot1", "active1", "active2", "mdn_active1", "mdn_active2"]:
     cr, d, o = process_turk_files(base + ".csv", traj_file=base + "_trajs.json")
+    q_names = [q_name for q_name in question_names if q_name in cr.columns]
     # Fill in missing values
-    cr[cr[question_names] == 6] = np.nan
+    cr[cr[q_names] == 6] = np.nan
     imp = IterativeImputer(missing_values=np.nan, max_iter=200, random_state=0, min_value=1, max_value=5)
-    to_impute = cr[question_names].to_numpy()
-    cr[question_names] = np.rint(imp.fit_transform(to_impute)).astype(int)
-    assert not cr[cr[question_names] == np.nan].any().any()
-    assert not cr[cr[question_names] == 6].any().any()
+    to_impute = cr[q_names].to_numpy()
+    cr[q_names] = np.rint(imp.fit_transform(to_impute)).astype(int)
+    assert not cr[cr[q_names] == np.nan].any().any()
+    assert not cr[cr[q_names] == 6].any().any()
     if condition_ratings is not None:
         condition_ratings = pd.concat([condition_ratings, cr])
         demos = pd.concat([demos, d])
@@ -51,6 +51,11 @@ for base in ["pilot1","active1","active2"]:
         condition_ratings = cr
         demos = d
         other_data = o
+    data = {"trajectories": str(d["traj"]), "explanations": list(d["explain_traj"]), "prompts": list(d["aid"]),
+                "workerIds": list(d["WorkerId"])}
+
+    with open(f"{base}_demos.json", 'w') as f:
+        json.dump(data, f)
 
     demo_trajs += list(d["traj"])
     demo_exps += list(d["explain_traj"])
@@ -60,6 +65,14 @@ for base in ["pilot1","active1","active2"]:
 data = {"trajectories": str(demo_trajs), "explanations": demo_exps, "prompts": demo_prompts, "workerIds": demo_wids}
 with open("all_demos.json", 'w') as f:
     json.dump(data, f)
+
+
+workers = other_data.groupby("WorkerId").first()
+genders = workers["Answer.gender"]
+print((genders.str.slice(0, 1) == "m").sum(),
+      (genders.str.slice(0, 1) == "f").sum())
+print(genders[~genders.str.contains("ale")].to_string())
+print(len(workers), workers["Answer.age"].min(), workers["Answer.age"].max(), workers["Answer.age"].mean(), workers["Answer.age"].std())
 
 # Create factor loadings
 num_factors = 3
@@ -74,15 +87,14 @@ fa_plot = make_fa_plots(condition_ratings, analysis)
 factor_names = ["factor" + str(i) for i in range(num_factors)]
 model_spec = ModelSpecificationParser.parse_model_specification_from_dict(condition_ratings[question_names].to_numpy(),
                                                                           factor_structure)
-cfa = ConfirmatoryFactorAnalyzer(model_spec, 42)
-cfa_res = cfa.fit(condition_ratings[question_names])
+cfa = ConfirmatoryFactorAnalyzer(model_spec, max_iter=20000)
+questions_in_factor_order = [value for factor in factor_structure.values() for value in factor]
+cfa_res = cfa.fit(condition_ratings[questions_in_factor_order])
 exp_transformer = load("factor_model.pickle")
-condition_ratings[factor_names] = exp_transformer.transform(condition_ratings[question_names].to_numpy())
+condition_ratings[factor_names] = exp_transformer.transform(condition_ratings[short_question_names].to_numpy())
 
 # factor_score_weights = pd.DataFrame(analysis.loadings_.T, columns=question_names)
 
-
-fit_lin_reg(condition_ratings, question_names)
 
 
 factor_names = ["factor" + str(i) for i in range(3)]
@@ -142,23 +154,6 @@ combined_hists = plot_histograms("All Conditions", question_names, condition_rat
 con_hists.append(combined_hists)
 """
 
-def calculate_alphas():
-    alphas = []
-    for i in range(num_factors):
-        factor_by_worker = []
-        for worker_id, worked in by_worker:
-            factor_by_worker.append([])
-            factor_by_worker[-1] = []
-            for _ in range(21):
-                factor_by_worker[-1].append(np.nan)
-            for _, row in worked.iterrows():
-                for factor in range(num_factors):
-                    factor_by_worker[-1][row["id"]] = row["factor" + str(i)]
-        alphas.append(krippendorff.krippendorff.alpha(factor_by_worker))
-
-    print("Krippendorf alphas")
-    print(alphas)
-
 
 """# Scatterplots
 feat_v_attr_scatters = []
@@ -168,8 +163,7 @@ for question in question_names:
 
 with PdfPages('../data/plots.pdf') as pp:
     pp.savefig(fa_plot)
-    pp.savefig(conf_plots)
+
     for fig in con_hists:
         pp.savefig(fig)
-    for fig in feat_v_attr_scatters:
-        pp.savefig(fig)
+
