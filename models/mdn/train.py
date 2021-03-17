@@ -2,110 +2,13 @@ import logging
 
 import pytorch_lightning as pl
 import torch
-import torch.nn as nn
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning.loggers import TensorBoardLogger
-from torch.utils.data import TensorDataset, DataLoader, Dataset
+from torch.utils.data import TensorDataset, DataLoader
 
-from models import mdn
-from models.mdn import  mog_log_prob
+from models.mdn.lit_mdn import LitMDN
 from models.util import LitProgressBar
 import numpy as np
-
-
-class LitMDN(pl.LightningModule):
-
-    def __init__(self, in_features, out_features, hidden_size, gaussians, noise_regularization=0.0):
-        super().__init__()
-        self.save_hyperparameters()
-        self.noise_regularization = noise_regularization
-        self.features = nn.Sequential(nn.Linear(in_features, hidden_size), nn.Tanh())
-        self.mdn = mdn.MDN(hidden_size, out_features, gaussians)
-
-    def log_prob(self, x, y):
-        feats = self.features(x)
-        return self.mdn.log_prob(feats, y)
-
-    def forward(self, x):
-        feats = self.features(x)
-        return self.mdn(feats)
-
-    def training_step(self, batch, batch_idx):
-        x, y = batch
-        if self.noise_regularization != 0.0:
-            x += torch.normal(0, self.noise_regularization, x.shape, device=self.device)
-            y += torch.normal(0, self.noise_regularization, y.shape, device=self.device)
-        feats = self.features(x)
-        loss = torch.mean(self.mdn.nll(feats, y))
-        self.log('train_loss', loss)
-        return loss
-
-    def validation_step(self, batch, batch_idx):
-        x, y = batch
-        feats = self.features(x)
-        loss = torch.mean(self.mdn.nll(feats, y))
-        self.log('val_loss', loss)
-        return loss
-
-    def test_step(self, batch, batch_idx):
-        x, y = batch
-        feats = self.features(x)
-        loss = torch.mean(self.mdn.nll(feats, y))
-        self.log('test_loss', loss)
-        return loss
-
-    def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters())
-        # Our model is really small, but LBFGS is unstable for its loss landscape
-        #optimizer = torch.optim.LBFGS(self.parameters())
-        return optimizer
-
-    def get_progress_bar_dict(self):
-        items = super().get_progress_bar_dict()
-        items["val_loss"] = f"{self.trainer.logged_metrics['val_loss']:.3g}"
-        return items
-
-
-def load_ensemble(path):
-    ens = []
-    for i in range(8):
-        ens.append(LitMDN.load_from_checkpoint(path + "/mdn_" + str(i) + ".ckpt"))
-    return MDNEnsemble(ens)
-
-
-class MDNEnsemble(nn.Module):
-    def __init__(self, models):
-        super().__init__()
-        self.models = models
-
-    def forward(self, x):
-        out = []
-        for m in self.models:
-            out.append(m.forward(x))
-        pi = torch.stack([p[0] for p in out], dim=1)
-        sigma = torch.stack([p[1] for p in out], dim=1)
-        mu = torch.stack([p[2] for p in out], dim=1)
-        return pi, sigma, mu
-
-    def freeze(self):
-        for m in self.models:
-            for param in m.parameters():
-                    param.requires_grad_(False)
-
-    def log_prob(self, x, y):
-        out = self.forward(x)
-        prob = mog_log_prob(*out,y)
-        return prob
-
-    def prob(self, x, y):
-        return torch.exp(self.log_prob(x, y))
-
-    def mean_prob(self, x, y):
-        return torch.mean(torch.exp(self.log_prob(x, y)),dim=1)
-
-    def mean_nll(self, x, y):
-        ens_probs = self.mean_prob(x, y)
-        return -torch.log(ens_probs).mean(0)
 
 
 def collate_fn_padd(batch):

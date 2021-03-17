@@ -1,16 +1,11 @@
 """A module for a mixture density network layer
 For more info on MDNs, see _Mixture Desity Networks_ by Bishop, 1994.
 """
-import itertools
-import sys
 
 import scipy
 import torch
 import torch.nn as nn
-import torch.optim as optim
-from torch.autograd import Variable
-from torch.distributions import Categorical, MultivariateNormal, MixtureSameFamily, Normal
-import torch.nn.functional as F
+from torch.distributions import Categorical, MultivariateNormal, MixtureSameFamily
 import math
 from scipy.stats import wasserstein_distance
 
@@ -207,68 +202,3 @@ def mog_jensen_shanon(mogs):
     mixture_entropy = kl_div_np(x, mixture_prob, uniform(6.0, 120))
 
     return mixture_entropy - (sum(entropies) / len(entropies))
-
-
-def ens_uncertainty_mean(ens, samples):
-    out = ens.forward(samples)
-    means = mog_desc(*out)[0]
-    return means.std(1)
-
-
-def ens_uncertainty_mode(ens, samples):
-    out = ens.forward(samples)
-    x = torch.linspace(-3, 3, 600)
-    probs = marginal_mog_log_prob(*out, x.reshape([-1, 1, 1]))
-    modes = x[torch.argmax(probs, dim=-1)]
-    # Variance of ens modes per dim
-    return modes.std(1)
-
-
-def ens_uncertainty_kl(ens, samples):
-    n = len(ens.models)
-    probs = marginal_mog_log_prob(*ens.forward(samples), torch.linspace(-3, 3, 120).reshape([-1, 1, 1]))
-    pairwise_kl = F.kl_div(probs.unsqueeze(1), probs.unsqueeze(2), reduction='none', log_target=True)
-    pairwise_kl = torch.trapz(pairwise_kl, dx=0.05)
-    offdiag_i = torch.hstack([torch.tril_indices(n, n, -1), torch.triu_indices(n, n, 1)])
-    offdiag_kl = pairwise_kl[:, offdiag_i[0], offdiag_i[1]]
-    # Mean over all pairs of distances. Out is uncertainty per dimension per sample
-    return offdiag_kl.mean(1)
-
-
-def ens_uncertainty_w(models, samples):
-    out = []
-
-    for model in models:
-        out.append(model.forward(samples))
-
-    w_dist = [[[], [], []] for _ in range(len(samples))]
-    ind = list(range(len(out)))
-    dims = out[0][1].shape[-1]
-    # Iterate pairs of models
-    for i, j in itertools.product(ind, ind):
-        if i == j:
-            continue
-        m0, m1 = out[i], out[j]
-        for k in range(len(samples)):
-            m0k = m0[0][k], m0[1][k], m0[2][k]
-            m1k = m1[0][k], m1[1][k], m1[2][k]
-            for d in range(dims):
-                w_dist[k][d].append(mog_wasserstein(marginal_mog(m0k, d), marginal_mog(m1k, d)))
-
-    # Mean over all pairs of distances. Out is uncertainty per dimension per sample
-    return np.array(w_dist).mean(2)
-
-
-def ens_uncertainty_js(models, samples):
-    out = []
-    for model in models:
-        out.append(model.forward(samples))
-    dims = out[0][1].shape[-1]
-    unc = [[] for _ in range(len(samples))]
-    for i in range(len(samples)):
-        mogs_per_sample = [(pi[i], sigma[i], mu[i]) for pi, sigma, mu in out]
-        for d in range(dims):
-            mogs_d = [marginal_mog(mog_d, d) for mog_d in mogs_per_sample]
-            unc[i].append(mog_jensen_shanon(mogs_d))
-
-    return np.array(unc)

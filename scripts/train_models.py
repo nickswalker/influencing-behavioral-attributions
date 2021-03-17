@@ -18,9 +18,9 @@ import numpy as np
 from sklearn.model_selection import GroupShuffleSplit
 from torch.utils.data import TensorDataset
 
-from models.mdn import mog_mode, ens_uncertainty_kl, ens_uncertainty_mode, ens_uncertainty_js, \
-    ens_uncertainty_w, marginal_mog_log_prob, ens_uncertainty_mean
-from models.nn import train_mdn, MDNEnsemble
+from models.mdn.mdn import mog_mode, marginal_mog_log_prob
+from models.mdn.ensemble import ens_uncertainty_kl, ens_uncertainty_js, ens_uncertainty_mode, ens_uncertainty_mean, ens_uncertainty_w, MDNEnsemble
+from models.mdn.train import train_mdn
 from models.plotting import make_mog
 from models.simple import fit_svm, bin_factor_score, bin_likert
 from models.util import process_turk_files
