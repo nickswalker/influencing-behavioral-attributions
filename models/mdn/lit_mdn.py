@@ -42,8 +42,10 @@ class LitMDN(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         x, y = batch
         feats = self.features(x)
-        loss = torch.mean(self.mdn.nll(feats, y))
+        nll = self.mdn.nll(feats, y)
+        loss = torch.mean(nll)
         self.log('test_loss', loss)
+        self.log('test_loss_std', torch.std(nll))
         return loss
 
     def configure_optimizers(self):

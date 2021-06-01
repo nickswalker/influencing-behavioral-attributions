@@ -39,9 +39,10 @@ class MDNEnsemble(nn.Module):
     def mean_prob(self, x, y):
         return torch.mean(torch.exp(self.log_prob(x, y)),dim=1)
 
-    def mean_nll(self, x, y):
+    def mean_std_nll(self, x, y):
         ens_probs = self.mean_prob(x, y)
-        return -torch.log(ens_probs).mean(0)
+        nll = -torch.log(ens_probs)
+        return nll.mean(0), nll.std(0)
 
     @staticmethod
     def load_ensemble(path):

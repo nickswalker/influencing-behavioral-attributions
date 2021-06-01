@@ -7,7 +7,7 @@ from factor_analyzer import FactorAnalyzer
 from matplotlib import pyplot as plt, ticker
 from sklearn.metrics import plot_confusion_matrix
 
-from models.util import question_code_to_name
+from processing.mappings import question_code_to_name
 
 
 def plot_components(components, ax, question_names, condition_name, title_prefix=""):
@@ -69,30 +69,6 @@ def plot_histograms(title, question_names, data, upper_bound=None):
         ax.bar([1, 2, 3, 4, 5], values)
         i += 1
     return plt.gcf()
-
-
-def make_histograms_by_factor():
-    for condition_code, group in by_condition:
-        i = 0
-        fig, axs = plt.subplots(num_factors, 1, figsize=(8.5, 11))
-        condition_name = str(condition_code)
-        fig.suptitle("Condition " + condition_name)
-        for factor_name in factor_names:
-            ax = axs[i]
-            ax.set_title(factor_name)
-            ax.set_ylim(0, 1)
-            ax.set_xticks(np.linspace(-2, 2, 5))
-            ax.yaxis.set_major_locator(ticker.NullLocator())
-            ax.spines['top'].set_color('none')
-            ax.spines['right'].set_color('none')
-            ax.spines['left'].set_color('none')
-            q_data = group[factor_name]
-            # as_array = question.to_numpy(dtype=np.int).flatten()
-            ax.scatter(q_data, [0] * len(q_data))
-
-            i += 1
-        # plt.show()
-        con_hists.append(fig)
 
 
 def make_scatterplot(feature_names, question, data):

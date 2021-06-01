@@ -67,8 +67,9 @@ def train_mdn(x, y, x_val, y_val, x_test, y_test, hparams={}, name=None):
             i += 1
             print(e)
             print(f"Retrying {i}...")
-    best_validation = LitMDN.load_from_checkpoint(checkpoint_path=checkpoint_callback.best_model_path)
+
     # trainer.test(module, DataLoader(test_data), verbose=False)[0]
-    results = trainer.test(best_validation, DataLoader(test_data), verbose=False)[0]
+    results = trainer.test(None, DataLoader(test_data, batch_size=len(test_data)), ckpt_path="best", verbose=False)[0]
     results = {**trainer.logged_metrics, **results}
+    best_validation = LitMDN.load_from_checkpoint(checkpoint_path=checkpoint_callback.best_model_path)
     return results, best_validation, checkpoint_callback.best_model_path

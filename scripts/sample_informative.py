@@ -14,7 +14,9 @@ from scipy.spatial.distance import cdist
 
 from models.mdn import ens_uncertainty_kl
 from models.nn import load_ensemble
-from models.util import gen_samples, process_turk_files, load_trajectory_pool, attributions, load_demo_pool
+from models.util import gen_samples
+from processing.loading import load_trajectory_pool, load_demo_pool, process_turk_files
+from processing.mappings import attributions
 from search.coverage import trajectory_features
 from search.sampling import sample_perturb_neighbor_pool
 from search.trajectory import TrajectoryNode

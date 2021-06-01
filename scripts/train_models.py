@@ -7,8 +7,7 @@ import sys
 
 import pandas as pd
 import torch
-from factor_analyzer import FactorAnalyzer, ModelSpecificationParser, ConfirmatoryFactorAnalyzer
-from joblib import dump
+from joblib import dump, load
 from sklearn.experimental import enable_iterative_imputer  # noqa
 
 from sklearn.impute import IterativeImputer
@@ -23,10 +22,10 @@ from models.mdn.ensemble import ens_uncertainty_kl, ens_uncertainty_js, ens_unce
 from models.mdn.train import train_mdn
 from models.plotting import make_mog
 from models.simple import fit_svm, bin_factor_score, bin_likert
-from models.util import process_turk_files
-from models.util import question_names as all_question_names
+from processing.loading import process_turk_files
+from processing.mappings import question_names as all_question_names
 from search.util import load_map
-
+from processing.mappings import factor_structure, short_question_names
 
 def make_mog_test_plots(model, x_test, y_test, model_name=""):
     y_test = y_test[["factor0", "factor1", "factor2"]].to_numpy()
@@ -50,18 +49,12 @@ random.seed(0)
 np.random.seed(0)
 torch.random.manual_seed(0)
 
-factor_structure = {"competent":
-                        ["competent", "efficient", "focused", "intelligent", "reliable", "responsible"],
-                    "broken": ["broken", "clumsy", "confused", "lost"],
-                    "curious": ["curious", "investigative"]
-                    }
-
 condition_ratings = []
 demos = []
 other_data = []
 max_id = 0
 for base in ["pilot1", "active1", "active2", "mdn_active1", "mdn_active2"]:
-    cr, d, o = process_turk_files(base + ".csv", traj_file=base + "_trajs.json")
+    cr, d, o, _ = process_turk_files(base + ".csv", traj_file=base + "_trajs.json")
     q_names = [q_name for q_name in all_question_names if q_name in cr.columns]
     # if "inquisitive" in cr.columns:
     #    cr.drop(columns=["inquisitive"], inplace=True)
@@ -82,69 +75,10 @@ all_ratings = pd.concat(condition_ratings)
 all_demos = pd.concat(demos)
 
 
-# Create factor loadings
-# Original, first SVM pilot factors
-num_factors = 3
-first_step_data = condition_ratings[0]
-first_q_names = [q_name for q_name in all_question_names if q_name in first_step_data.columns]
-factor_names = ["factor" + str(i) for i in range(num_factors)]
-exp_transformer = FactorAnalyzer(n_factors=num_factors, rotation="promax",)
-analysis = exp_transformer.fit(first_step_data[first_q_names].to_numpy())
-
-# Analysis across three SVM pilot factor
-exp_transformer2 = FactorAnalyzer(n_factors=4, rotation="promax")
-analysis2 = exp_transformer2.fit(pd.concat(condition_ratings[:3])[first_q_names].to_numpy())
-
-exp_transformer3 = FactorAnalyzer(n_factors=num_factors, rotation="promax")
-analysis3 = exp_transformer3.fit(pd.concat(condition_ratings[:3])[first_q_names].to_numpy())
-
-exp_transformer34 = FactorAnalyzer(n_factors=4, rotation="promax")
-analysis34 = exp_transformer34.fit(pd.concat(condition_ratings[:3])[first_q_names].to_numpy())
-
-exp_transformer35 = FactorAnalyzer(n_factors=5, rotation="promax")
-analysis35 = exp_transformer35.fit(pd.concat(condition_ratings[:3])[first_q_names].to_numpy())
-
-small_question_names = first_q_names.copy()
-small_question_names.remove("lazy")
-
-
-exp_transformer3s = FactorAnalyzer(n_factors=num_factors, rotation="promax")
-analysis3s = exp_transformer3s.fit(pd.concat(condition_ratings[:3])[small_question_names].to_numpy())
-
-small_question_names.remove("energetic")
-
-
-exp_transformer3ss = FactorAnalyzer(n_factors=num_factors, rotation="promax")
-analysis3ss = exp_transformer3ss.fit(pd.concat(condition_ratings[:3])[small_question_names].to_numpy())
-
-exp_transformer3ss4 = FactorAnalyzer(n_factors=4, rotation="promax")
-analysis3ss4 = exp_transformer3ss4.fit(pd.concat(condition_ratings[:3])[small_question_names].to_numpy())
-
-exp_transformer3ss5 = FactorAnalyzer(n_factors=5, rotation="promax")
-analysis3ss5 = exp_transformer3ss5.fit(pd.concat(condition_ratings[:3])[small_question_names].to_numpy())
-
-
-# With new data (inquisitive added)
-exp_transformer4 = FactorAnalyzer(n_factors=4, rotation="promax")
-analysis4 = exp_transformer4.fit(pd.concat(condition_ratings[3:])[all_question_names].to_numpy())
-
-# New data, lazy dropped
-new_small_question_names = all_question_names.copy()
-new_small_question_names.remove("lazy")
-exp_transformer4s = FactorAnalyzer(n_factors=3, rotation="promax")
-analysis4s = exp_transformer4s.fit(pd.concat(condition_ratings[3:])[new_small_question_names].to_numpy())
-
-new_small_question_names.remove("energetic")
-
-exp_transformer4ss = FactorAnalyzer(n_factors=3, rotation="promax")
-analysis4ss = exp_transformer4ss.fit(pd.concat(condition_ratings[3:])[new_small_question_names].to_numpy())
-
-chosen_transformer = exp_transformer3ss
-question_names = small_question_names
-dump(chosen_transformer, "factor_model.pickle")
-
+chosen_transformer = load("factor_model.pickle")
+factor_names = ["factor0", "factor1", "factor2"]
 for i in range(len(condition_ratings)):
-    condition_ratings[i][factor_names] = chosen_transformer.transform(condition_ratings[i][question_names].to_numpy())
+    condition_ratings[i][factor_names] = chosen_transformer.transform(condition_ratings[i][short_question_names].to_numpy())
 
 
 """model_spec = ModelSpecificationParser.parse_model_specification_from_dict(condition_ratings[question_names].to_numpy(),
@@ -356,10 +290,10 @@ def train_val_test_split(x, y, groups, test_size=0.3, val_size=0.3, random_state
 
 def cv_bagged_ensemble_mdn(n, ens_size, hparams):
     print(n, ens_size, hparams)
-    all_metrics = []
-    ens_metrics = []
+    all_metrics = np.empty((n, ens_size, 2))
+    ens_metrics = np.empty((n, 2))
     x_all = pd.concat([data[["features", "uuid"]] for data in condition_ratings])
-    y_all = pd.concat([data[question_names + factor_names].copy() for data in condition_ratings])
+    y_all = pd.concat([data[short_question_names + factor_names].copy() for data in condition_ratings])
     for random_state in range(n):
         gss = GroupShuffleSplit(n_splits=1, test_size=0.3, random_state=random_state)
         tv_i, test_i = next(gss.split(x_all, y_all, groups=x_all["uuid"]))
@@ -367,7 +301,6 @@ def cv_bagged_ensemble_mdn(n, ens_size, hparams):
 
         x_test_ten, y_test_ten = torch.from_numpy(np.vstack(x_test["features"])).float(), torch.from_numpy(y_test[["factor0", "factor1", "factor2"]].to_numpy()).float()
 
-        all_metrics.append([])
         ens_models = []
         for i in range(ens_size):
             gss = GroupShuffleSplit(n_splits=1, test_size=0.3, random_state=i)
@@ -377,19 +310,39 @@ def cv_bagged_ensemble_mdn(n, ens_size, hparams):
             print(name)
             mdn_res, best_model, _ = train_mdn(x_train, y_train, x_val, y_val, x_test, y_test, hparams=hparams, name=name)
 
-            all_metrics[-1].append(mdn_res[f"test_loss"])
+            all_metrics[random_state, i, 0] = mdn_res[f"test_loss"]
+            all_metrics[random_state, i, 1] = mdn_res[f"test_loss_std"]
             ens_models.append(best_model)
         ens = MDNEnsemble(ens_models)
         ens.freeze()
 
-        test_loss = ens.mean_nll(x_test_ten, y_test_ten)
-        ens_metrics.append(test_loss)
-        print(f"Ens{random_state}: {test_loss}")
+        test_loss, test_loss_std = ens.mean_std_nll(x_test_ten, y_test_ten)
+        ens_metrics[random_state] = [test_loss, test_loss_std]
+        print(f"Ens{random_state}: {test_loss} ({test_loss_std})")
 
-    first_m_res = np.array(all_metrics)[:, 0]
-    print(f"N={n}", first_m_res.mean(0), first_m_res.std(0))
-    print(f"Ens={ens_size}, N={n}", np.array(ens_metrics).mean(0), np.array(ens_metrics).std(0))
+    #https://www.graphpad.com/support/faq/the-confidence-interval-of-a-standard-deviation/
+    # http://www2.stat.duke.edu/~banks/111-lectures.dir/lect13.pdf
+    # Explaining how we're going to get confidence intervals on the SD
+    # http://www2.stat.duke.edu/~banks/111-lectures.dir/lect13.pdf
 
+    first_m_res = all_metrics[:, 0]
+    first_m_mean, first_m_std = first_m_res[:,0].mean(), first_m_res[:,0].std()
+    first_m_mean_std, first_m_mean_std_std = first_m_res[:,1].mean(), first_m_res[:,1].std()
+    boostrapped_ind_mean = [np.random.choice(first_m_res[:, 0], size=(n), replace=True).mean() for _ in range(1000)]
+    boostrapped_ind_mean = first_m_mean - np.percentile(boostrapped_ind_mean, [2.5, 97.5])
+    boostrapped_ind_std = [np.random.choice(first_m_res[:, 1], size=(n), replace=True).mean() for _ in range(1000)]
+    boostrapped_ind_std = first_m_mean_std - np.percentile(boostrapped_ind_std, [2.5, 97.5])
+    print(f"N={n} sample mean {first_m_mean:.2f} ({first_m_std:.2f}), avg sample std: {first_m_mean_std:.2f} ({first_m_mean_std_std:.2f})")
+    print(boostrapped_ind_mean, boostrapped_ind_std)
+
+    ens_mean, ens_std = ens_metrics[:,0].mean(), ens_metrics[:,0].std()
+    ens_mean_std, ens_mean_std_std = ens_metrics[:,1].mean(), ens_metrics[:,1].std()
+    boostrapped_ens_mean = [np.random.choice(ens_metrics[:, 0], size=(n), replace=True).mean() for _ in range(1000)]
+    boostrapped_ens_mean = ens_mean - np.percentile(boostrapped_ens_mean, [2.5, 97.5])
+    boostrapped_ens_std = [np.random.choice(ens_metrics[:, 1], size=(n), replace=True).mean() for _ in range(1000)]
+    boostrapped_ens_std = ens_mean_std - np.percentile(boostrapped_ens_std, [2.5, 97.5])
+    print(f"Ens={ens_size}, N={n} sample mean: {ens_mean:.2f} ({ens_std:.2f}), avg sample std: {ens_mean_std:.2f} ({ens_mean_std_std:.2f})")
+    print(boostrapped_ens_mean, boostrapped_ens_std)
 
 def percentage_data_experiment(n, ens_size, data, hparams):
     print(n, ens_size, hparams)
@@ -492,26 +445,25 @@ with open("ens1/test_i.txt") as f:
 
 #percentage_data_experiment(8, 8, pd.concat(condition_ratings), {"hidden_size": 5, "gaussians": 4, "noise_regularization": 0.15})
 #percentage_data_experiment(8, 8, pd.concat(condition_ratings), {"hidden_size": 5, "gaussians": 1, "noise_regularization": 0.15})
-percentage_data_experiment(8, 1, pd.concat(condition_ratings), {"hidden_size": 5, "gaussians": 1, "noise_regularization": 0.15})
-
-sys.exit(0)
+#percentage_data_experiment(8, 1, pd.concat(condition_ratings), {"hidden_size": 5, "gaussians": 1, "noise_regularization": 0.15})
 
 #cv_mdn_stepwise(8, 8, [pd.concat(condition_ratings)], {"hidden_size": 5, "gaussians": 4, "noise_regularization": 0.15}, dry_run=False, select_with_test=True)
 #sys.exit(0)
 
+"""
 print("STEPWISE START")
 datasteps = [pd.concat(condition_ratings[:3])] + condition_ratings[3:]
 cv_mdn_stepwise(8, 8, datasteps, {"hidden_size": 5, "gaussians": 4, "noise_regularization": 0.15},chosen_test=test_indices, dry_run=False)
 cv_mdn_stepwise(8, 8, datasteps, {"hidden_size": 5, "gaussians": 1, "noise_regularization": 0.15},chosen_test=test_indices)
 print("STEPWISE END")
+"""
 #ensemble_mdn_unc(16, {"hidden_size": 5, "gaussians": 4, "noise_regularization": 0.15}, dry_run=False)
 #sys.exit(0)
 
 
-
-
-
-cv_bagged_ensemble_mdn(16,4,{"hidden_size": 5, "gaussians": 4, "noise_regularization": 0.15})
+#cv_bagged_ensemble_mdn(16,4,{"hidden_size": 5, "gaussians": 4, "noise_regularization": 0.15})
+cv_bagged_ensemble_mdn(16,8,{"hidden_size": 5, "gaussians": 1, "noise_regularization": 0.15, "epochs": 1})
+cv_bagged_ensemble_mdn(16,8,{"hidden_size": 5, "gaussians": 1, "noise_regularization": 0.15})
 cv_bagged_ensemble_mdn(16,8,{"hidden_size": 5, "gaussians": 4, "noise_regularization": 0.15})
 cv_bagged_ensemble_mdn(16,16,{"hidden_size": 5, "gaussians": 4, "noise_regularization": 0.15})
 

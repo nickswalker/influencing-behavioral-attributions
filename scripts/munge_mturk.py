@@ -16,7 +16,8 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 from models.plotting import plot_histograms, make_scatterplot, make_fa_plots, make_conf_mat_plots, make_density
 from models.simple import fit_lin_reg
-from models.util import process_turk_files, question_names, feature_names, old_question_names, short_question_names
+from processing.loading import process_turk_files
+from processing.mappings import old_question_names, short_question_names, question_names, feature_names
 
 factor_structure = {"competent":
                         ["competent", "efficient", "focused", "intelligent", "reliable", "responsible"],
@@ -33,8 +34,8 @@ demo_exps = []
 demo_prompts = []
 demo_wids = []
 #for base in ["mdn_active1", "mdn_active2"]:
-for base in ["pilot1", "active1", "active2", "mdn_active1", "mdn_active2"]:
-    cr, d, o = process_turk_files(base + ".csv", traj_file=base + "_trajs.json")
+for base in ["pilot1"]:
+    cr, d, o, comparison = process_turk_files(base + ".csv", traj_file=base + "_trajs.json")
     q_names = [q_name for q_name in question_names if q_name in cr.columns]
     # Fill in missing values
     cr[cr[q_names] == 6] = np.nan
@@ -94,8 +95,6 @@ exp_transformer = load("factor_model.pickle")
 condition_ratings[factor_names] = exp_transformer.transform(condition_ratings[short_question_names].to_numpy())
 
 # factor_score_weights = pd.DataFrame(analysis.loadings_.T, columns=question_names)
-
-
 
 factor_names = ["factor" + str(i) for i in range(3)]
 
