@@ -26,3 +26,4 @@ factor_structure = {"competence":
                     "brokenness": ["broken", "clumsy", "confused", "lost"],
                     "curiosity": ["curious", "investigative"]
                     }
+factor_names = ["competence", "brokenness", "curiosity"]
