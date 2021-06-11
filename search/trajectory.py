@@ -3,6 +3,7 @@ import random
 
 import numpy as np
 
+from search.coverage import trajectory_cost
 from search.navigation import PointNode
 from search.metric import manhattan
 from search.routine import astar
@@ -11,14 +12,15 @@ from search.routine import astar
 class TrajectoryNode:
 
     featurizer = None
-    def __init__(self, value, features):
+    def __init__(self, value, features, goal_region=None, cost=0):
         self.trajectory = value
         self.features = features
         if features is None:
             self.features = TrajectoryNode.featurizer(value)
         self.parent = None
         self.H = 0
-        self.G = 0
+        self.G = cost
+        self.goal_region = goal_region
 
     def move_cost(self, other):
         # Designed to be used with an external cost
@@ -54,7 +56,7 @@ class TrajectoryNode:
             return self.__key() < other.__key()
         return NotImplemented
 
-    def neighbors(self, grid):
+    def neighbors(self, grid, goal):
         plan = self.trajectory
         width, height = len(grid[0]), len(grid)
         # Modify each action in the plan. Repair the plan with shortest path to reconnect.
@@ -81,7 +83,7 @@ class TrajectoryNode:
                 # Control  exploration: no trajs longer than 250
                 if len(joined) > 250:
                     continue
-                new_node = TrajectoryNode(joined, None)
+                new_node = TrajectoryNode(joined, None, goal_region=self.goal_region, cost=trajectory_cost(self.goal_region, grid, joined))
                 neighbors.append(new_node)
 
         # Cuts require 4+ actions to start with
@@ -105,7 +107,7 @@ class TrajectoryNode:
             # Control  exploration: no trajs longer than 250
             if len(joined) > 250:
                 continue
-            new_node = TrajectoryNode(joined, None)
+            new_node = TrajectoryNode(joined, None, goal_region=self.goal_region, cost=trajectory_cost(self.goal_region, grid, joined))
             neighbors.append(new_node)
         return neighbors
 

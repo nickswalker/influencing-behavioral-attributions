@@ -143,7 +143,7 @@ def hill_descend(start, goal, grid, heuristic=manhattan, tolerance=8, max_tries=
     return path[::-1]
 
 
-def batch_hill_descend(starts, goal, grid, heuristic=manhattan, tolerance=8, max_tries=1000, branch_limit=200, verbose=True):
+def batch_hill_descend(starts, goal, grid, heuristic=manhattan, tolerance=8, max_tries=1000, branch_limit=200, cost_bound=None, verbose=True):
     # The open and closed sets
     frontier = PriorityQueue()
     openset = set()
@@ -181,8 +181,9 @@ def batch_hill_descend(starts, goal, grid, heuristic=manhattan, tolerance=8, max
             closedset.add(current)
 
             # Loop through the node's children/siblings
-            neighbors = current.neighbors(grid)
-
+            neighbors = current.neighbors(grid, goal)
+            if cost_bound is not None:
+                neighbors = list(filter(lambda node: node.G < cost_bound, neighbors))
             # About the practical limit for branching and reasonable search times
             if len(neighbors) > branch_limit:
                 neighbors = random.sample(neighbors, branch_limit)

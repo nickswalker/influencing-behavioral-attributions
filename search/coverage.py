@@ -16,14 +16,29 @@ TOTAL_COVERAGE = 8
 IDLE_TIME = 9
 START_STOPINESS = 10
 
+feature_map = {GOAL_COV: "goal_cov",
+                 OVERLAP: "overlap",
+                 LENGTH: "length",
+                 STRAIGHTNESS: "straight template match",
+                 HOOKINESS: "hook template match",
+                 CARPET_TIME: "carpet time",
+                 COLLISION_TIME: "collision time",
+                 REDUNDANT_COVERAGE: "redundant coverage",
+                 TOTAL_COVERAGE: "total coverage",
+                 IDLE_TIME: "idle time",
+                 START_STOPINESS: "start-stop template match"
+}
+
+feature_names = list(feature_map.values())
 
 def trajectory_features(goal, grid, plan):
     if len(plan) == 0:
         return (0,0,0,0,0,0,0,0,0,0,0)
     # How many unique states do we visit as a percentage of the plan length (0,1]
-    self_overlap = 1. - len(set(plan)) / len(plan)
+    unique_states = set(plan)
+    self_overlap = 1. - len(unique_states) / len(plan)
     # [0,1]
-    num_missed = len(set(goal).difference(set(plan)))
+    num_missed = len(set(goal).difference(unique_states))
     goal_cov = 1.0 - (num_missed / len(goal))
     states_in_coverage_zone = [p for p in plan if p in goal]
     covered = Counter(states_in_coverage_zone)
@@ -60,15 +75,15 @@ def trajectory_features(goal, grid, plan):
         straightness = 0
     else:
         # Each hook template match indicates 3 steps spent "in a turn"
-        hookiness = (hook_x_count + hook_y_count) * 3 / len(diffs_2)
+        hookiness = (hook_x_count + hook_y_count) * 3 / len(hook_y)
         # Second diff of 0 means straight-line motion. Count number of rows with this case and sum
         straight_time = (diffs_2 == [0, 0]).all(-1).sum()
         straightness = straight_time / len(diffs_2)
 
-    covered_x, covered_y = set([p[0] for p in plan]), set([p[1] for p in plan])
+    covered_x, covered_y = set([p[0] for p in unique_states]), set([p[1] for p in unique_states])
     x_coverage = len(covered_x) / len(grid[0])
     y_coverage = len(covered_y) / len(grid)
-    total_coverage = len(set(plan)) / (len(grid) * len(grid[0]))
+    total_coverage = len(unique_states) / (len(grid) * len(grid[0]))
 
     return (goal_cov,
             self_overlap,
@@ -81,6 +96,10 @@ def trajectory_features(goal, grid, plan):
             total_coverage,
             idle_time,
             start_stopiness)
+
+def print_feats(feats):
+    for val, name in zip(feats, feature_names):
+        print(f"{val:.2f} \t {name}")
 
 
 class CoverageNode:

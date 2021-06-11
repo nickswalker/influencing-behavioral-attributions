@@ -11,6 +11,7 @@ import torch
 import pandas as pd
 
 import numpy as np
+from joblib import delayed, Parallel
 from scipy.spatial.distance import cdist
 
 from models.mdn.mdn import normal, marginal_mog_log_prob
@@ -19,7 +20,7 @@ from models.mdn.ensemble import MDNEnsemble, ens_uncertainty_kl
 from models.util import gen_samples
 from processing.loading import load_trajectory_pool, load_demo_pool, process_turk_files
 from processing.mappings import attributions
-from search.coverage import trajectory_features, trajectory_cost, CoverageNode
+from search.coverage import trajectory_features, trajectory_cost, CoverageNode, print_feats
 from search.metric import coverage_manhattan
 from search.routine import hill_descend, batch_hill_descend, astar
 from search.sampling import sample_neighbors, sample_neighbors_for_pool
@@ -34,152 +35,142 @@ np.random.seed(0)
 torch.random.manual_seed(0)
 
 
-class MyBounds(object):
-    def __init__(self, xmax=np.full([11], 1), xmin=np.full([11], 0)):
-        self.xmax = xmax
-        self.xmin = xmin
-
-    def __call__(self, **kwargs):
-        x = kwargs["x_new"]
-        tmax = bool(np.all(x <= self.xmax))
-        tmin = bool(np.all(x >= self.xmin))
-        return tmax and tmin
-
-
-def batch_min_div(nodes, goal_dist, x, d):
-    node_feats = np.array([node.features for node in nodes], dtype=np.float)
-    node_batch = torch.Tensor(node_feats)
-    # dists = ens.prob(node_batch, x)
-    # dists = dists.T.reshape(-1, 120,120,120)
-    # pred = ens.mean_prob(node_batch, x)
-    p_marg = marginal_mog_log_prob(*ens.forward(node_batch), x.reshape([-1, 1, 1]))
-    # TODO: FIX to mean after exp
-    pred = p_marg.mean(1)
-    pred_d = pred[:, d]
-
-    kl = F.kl_div(pred_d, goal_dist, reduction='none', log_target=False)
-    kl = torch.trapz(kl, x)
-    print(kl.min())
-    unc = ens_uncertainty_kl(ens, node_batch)
-    # We want distribution to match, so drive kl to 0
-    return kl.detach().numpy()
-
-
-def optimize_feats(model, goal_dist, d, x):
-    inputs = torch.rand((10000,11), requires_grad=True)
-
+def optimize_feats(ens, goal_dist, d, x, max_effort=1250):
+    inputs = torch.rand((8192, 11), requires_grad=True)
+    if not isinstance(x, torch.Tensor):
+        x = torch.tensor(x).float()
     p_marg = marginal_mog_log_prob(*ens.forward(torch.clamp(inputs, 0, 1)), x.reshape([-1, 1, 1]))
-    # TODO: FIX to mean after exp
-    pred = p_marg.mean(1)
-    pred_d = pred[:, d]
+    pred_d = p_marg[:,:,d].exp().mean(1).log()
 
     kl = F.kl_div(pred_d, goal_dist, reduction='none', log_target=False)
     kl = torch.trapz(kl, x)
-    inputs = inputs[torch.argmin(kl, 0)]
-    inputs = inputs.reshape(1, -1).detach()
+    inputs = inputs.detach()[torch.topk(kl,4).indices]
     inputs.requires_grad = True
-    model.requires_grad_(False)
+    ens.requires_grad_(False)
     optimizer = torch.optim.Adam([inputs], lr=0.001)
-    for i in range(300):
-        p_marg = marginal_mog_log_prob(*ens.forward(torch.clamp(inputs, 0, 1)), x.reshape([-1, 1, 1]))
-        # TODO: FIX to mean after exp
-        pred = p_marg.mean(1)
-        pred_d = pred[:, d]
+
+    for i in range(max_effort):
+        optimizer.zero_grad()
+        clamped_in = torch.clamp(inputs, 0, 1)
+        p_marg = marginal_mog_log_prob(*ens.forward(clamped_in), x.reshape([-1, 1, 1]))
+        pred_d = p_marg[:,:,d].exp().mean(1).log()
 
         kl = F.kl_div(pred_d, goal_dist, reduction='none', log_target=False)
         kl = torch.trapz(kl, x)
-        #print(torch.argmin(kl,0), torch.argmax(kl, 0))
-        print(kl.min(), kl.max())
+        if i % 250 == 0:
+            print(i, torch.min(kl, 0).values.detach().numpy())
         kl.mean().backward(retain_graph=True)
         optimizer.step()
-    return torch.clamp(inputs[torch.argmin(kl)], 0, 1).detach()
+    raw_out = inputs[torch.argmin(kl)]
+    return torch.clamp(raw_out, 0, 1).detach()
 
 
-def sample_attr(inits, d, goal_dist, x, grid, ens, w, goal_region, name, max_effort=100):
+def sample_attr(inits, d, goal_dist, x, grid, ens, goal_region, max_effort=300, optimal_cost=None, cost_threshold=2):
     inits = [traj for traj in inits if len(traj) > 5]
-
-    def min_div(node, goal):
-        node_feats = np.array(node.features, dtype=np.float)
-        node_batch = torch.Tensor(node_feats).unsqueeze(0)
-        # dists = ens.prob(node_batch, x)
-        # dists = dists.T.reshape(-1, 120,120,120)
-        # pred = ens.mean_prob(node_batch, x)
-        p_marg = marginal_mog_log_prob(*ens.forward(node_batch), x.reshape([-1, 1, 1]))
-        pred = p_marg.mean(1).squeeze()
-        pred_d = pred[d]
-
-        kl = F.kl_div(pred_d, goal_dist, reduction='none', log_target=False)
-        kl = torch.trapz(kl, x)
-        # We want distribution to match, so drive kl to 0
-        return kl.item()
 
     def batch_min_div(nodes, goal):
         if len(nodes) == 0:
             return np.array([])
         node_feats = np.array([node.features for node in nodes], dtype=np.float)
-        cost = [trajectory_cost(goal_region, grid, node.trajectory) for node in nodes]
+        cost = [node.G for node in nodes]
         node_batch = torch.Tensor(node_feats)
         # dists = ens.prob(node_batch, x)
         # dists = dists.T.reshape(-1, 120,120,120)
         # pred = ens.mean_prob(node_batch, x)
         p_marg = marginal_mog_log_prob(*ens.forward(node_batch), x.reshape([-1, 1, 1]))
-        pred = p_marg.mean(1)
-        pred_d = pred[:, d]
+        pred_d = p_marg[:,:,d].exp().mean(1).log()
 
         kl = F.kl_div(pred_d, goal_dist, reduction='none', log_target=False)
         kl = torch.trapz(kl, x)
-
+        # uncertainty doesn't end up being that useful
         unc = ens_uncertainty_kl(ens, node_batch)
         together = np.vstack([unc.detach().numpy()[:, d].T, kl.detach().numpy(), cost])
+        # Set a floor for task costs we'll allow
+        together[2, :] /= optimal_cost
+        together[2, together[2, :] > cost_threshold] = float('inf')
         # We want distribution to match, so drive kl to 0
-        scored = together[1] * w + together[2]
-        print(
-            f"{kl.min():.2f}, {together[2].min()} || {together[1][scored.argmin()]:.2f}, {together[2][scored.argmin()]} => {scored.min():.2f}")
+        scored = together[1]
+
+        #print(f"kl={together[1][scored.argmin()]:.2f} c={together[2][scored.argmin()]:.2f}")
         return scored.T
 
-    def goal_kl(x_opt):
-        mog = ens.forward(torch.Tensor(x_opt).unsqueeze(0))
-        dist = marginal_mog_log_prob(*mog, torch.Tensor(x).reshape([-1, 1, 1])).mean(1).squeeze()
-        pred_d = dist[d]
-        kl = F.kl_div(pred_d, goal_dist, reduction='none', log_target=False)
-        kl = torch.trapz(kl, x)
-        print(x_opt, kl.item())
-        return kl.item()
-
-    # best_in = scipy.optimize.minimize(goal_kl, np.full([11], .5), bounds=[(0,1) for _ in range(11)], method="l-bfgs-b", options={"eps":0.001})
-    # best_in = scipy.optimize.basinhopping(goal_kl, np.full([11], .5), accept_test=MyBounds())
-
-    modificiations = batch_hill_descend([TrajectoryNode(orig, None) for orig in inits],
-                                        TrajectoryNode(ANY_PLAN, (None,)), grid,
-                                        batch_min_div, max_tries=max_effort, tolerance=0.0, verbose=False)
+    modificiations = batch_hill_descend([TrajectoryNode(orig, None, goal_region=goal_region, cost=trajectory_cost(goal_region, grid, orig)) for orig in inits],
+                                        TrajectoryNode(ANY_PLAN, (None,), goal_region=goal_region), grid,
+                                        batch_min_div, max_tries=max_effort, tolerance=0.0, cost_bound=optimal_cost * cost_threshold, verbose=False)
     new = modificiations[-1].trajectory
 
-    upper_bound_feats = optimize_feats(ens, goal_dist, d, x)
-    print(upper_bound_feats)
-    p_marg = marginal_mog_log_prob(*ens.forward(upper_bound_feats.reshape(-1, 11)), x.reshape([-1, 1, 1]))
-    pred = p_marg.mean(1)
-    pred_d = pred[:, d]
-    kl = F.kl_div(pred_d, goal_dist, reduction='none', log_target=False)
-    kl = torch.trapz(kl, x).detach().numpy()
-    pred_d = pred_d.exp().squeeze()
-    fig = plt.figure()
-    plt.plot(x, pred_d, label=f"ideal kl={kl}")
-    new_feats = torch.tensor(TrajectoryNode.featurizer(new)).reshape([-1, 11]).float()
-    p_marg = marginal_mog_log_prob(*ens.forward(new_feats), x.reshape([-1, 1, 1]))
-    pred = p_marg.mean(1)
-    pred_d = pred[:, d]
-    kl = F.kl_div(pred_d, goal_dist, reduction='none', log_target=False)
-    kl = torch.trapz(kl, x).detach().numpy()
-    pred_d = pred_d.exp().squeeze()
-    plt.plot(x, pred_d, label=f"realized kl={kl}")
-    plt.plot(x, goal_dist, label="goal")
-    plt.legend()
-    plt.title(name)
     return new
 
 
-IG = 1000000
-if __name__ == '__main__':
+def plot_lines(lines, x, goal, name):
+    fig = plt.figure()
+    cmap = plt.get_cmap('viridis')
+    plt.plot(x, goal, label="goal", color="g")
+    for label, (traj, line, cost, kl) in lines.items():
+        if label == "Ideal":
+            plt.plot(x, line, label=f"{label} kl={kl:.2f}", color="b")
+        else:
+            label = float(label)
+            color = ((label - 1) / 5) * .8 + .2
+            color = min(color, 1.0)
+            color = cmap(color)
+            if label > 6:
+                color = "orange"
+            plt.plot(x, line, label=f"{label:.2f} kl={kl:.2f} c={cost}", color=color)
+
+    plt.legend()
+    plt.title(name)
+    return fig
+
+
+def feats_to_density(feats, ens, x, d):
+    if not isinstance(feats, torch.Tensor):
+        feats = torch.Tensor(feats)
+    p_marg = marginal_mog_log_prob(*ens.forward(feats.reshape(-1, 11)), x.reshape([-1, 1, 1]))
+    pred_d = p_marg[:,:,d].exp().mean(1)
+    pred_d = pred_d.squeeze()
+    return pred_d
+
+
+def sweep_constraint(start_traj, goal_dist, d, grid, goal_region, x, ens, opt_cost, name):
+    vals = [1, 1.25, 1.5, 1.75, 2, 3, 4, 5, 10]
+
+    def get_traj_for_suboptimality(val):
+        featurizer = partial(trajectory_features, goal_region, grid)
+        TrajectoryNode.featurizer = featurizer
+        return sample_attr([start_traj], d, goal_dist, x, grid, ens, goal_region,
+                                    optimal_cost=opt_cost, cost_threshold=val)
+    trajs = Parallel(n_jobs=len(vals),verbose=0)(delayed(get_traj_for_suboptimality)(val) for val in vals)
+    costs = [trajectory_cost(goal_region, grid, traj) for traj in trajs]
+
+    print(name, "******************************************************")
+    lines = {str(val): (traj, cost) for val, traj, cost in zip(vals, trajs, costs)}
+    upper_bound_feats = optimize_feats(ens, goal_dist, d, x)
+    ideal_line = feats_to_density(upper_bound_feats, ens, x, d)
+    kl = F.kl_div(ideal_line.log(), goal_dist, reduction='none', log_target=False)
+    ideal_kl = torch.trapz(kl, x)
+
+    for key, (traj, cost) in lines.items():
+        traj_feats = TrajectoryNode.featurizer(traj)
+        line = feats_to_density(traj_feats, ens, x, d)
+        kl = F.kl_div(line.log(), goal_dist, reduction='none', log_target=False)
+        kl = torch.trapz(kl, x)
+        lines[key] = (traj, line, cost, kl)
+        ideal_gap = np.linalg.norm(traj_feats - upper_bound_feats.detach().numpy(), 1)
+        print(f"{key}: c={cost} kl={kl:.2f} gap={ideal_gap:.2f}")
+        print_feats(traj_feats)
+        print(traj)
+        print()
+
+    lines["Ideal"] = (None, ideal_line, None, ideal_kl)
+    print(f"Ideal: kl={ideal_kl:.2f}")
+    print_feats(upper_bound_feats)
+    print()
+
+    line_fig = plot_lines(lines, x, goal_dist, name)
+
+
+def main():
     grid, bedroom = load_map("interface/assets/house.tmx")
 
     _, demo_data, _, _ = process_turk_files(
@@ -215,37 +206,17 @@ if __name__ == '__main__':
            (27, 11), (27, 10), (27, 9), (27, 8), (26, 8), (25, 8), (25, 7), (25, 8), (25, 9), (25, 10), (24, 10),
            (23, 10), (22, 10), (21, 10), (20, 10), (20, 11), (20, 12), (19, 12), (19, 11), (19, 10), (19, 9), (18, 9),
            (17, 9), (16, 9), (15, 9), (14, 9), (13, 9), (12, 9), (11, 9), (10, 9)]
+    opt_cost = trajectory_cost(bedroom, grid, opt)
+
+    sweep_constraint(opt, goal_dist, 0, grid, bedroom, x_b, ens, opt_cost, "In Competence B+")
+    sweep_constraint(opt, inv_goal_dist, 0, grid, bedroom, x_b, ens, opt_cost, "In Competence B-")
+    sweep_constraint(opt, goal_dist, 1, grid, bedroom, x_b, ens, opt_cost, "In Brokenness B+")
+    sweep_constraint(opt, inv_goal_dist, 1, grid, bedroom, x_b, ens, opt_cost, "In Brokenness B-")
+    sweep_constraint(opt, goal_dist, 2, grid, bedroom, x_b, ens, opt_cost, "In Curious B+")
+    sweep_constraint(opt, inv_goal_dist, 2, grid, bedroom, x_b, ens, opt_cost, "In Curious B-")
+    plt.show()
+
     print("TSK", trajectory_cost(bedroom, grid, opt))
-
-    g0 = sample_attr([opt], 0, goal_dist, x_b, grid, ens, IG, bedroom, "In Competence B+")
-    print("G0", trajectory_cost(bedroom, grid, g0), g0)
-
-    g0_inv = sample_attr([opt], 0, inv_goal_dist, x_b, grid, ens, IG, bedroom, "In Competence B-")
-    print("G0 inv", g0_inv)
-
-    # g0_inv_bal = sample_attr([opt], 0, inv_goal_dist, x_b, grid, ens, 70.0, bedroom)
-    # print("G0 inv bal", trajectory_cost(bedroom, grid, g0_inv_bal), g0_inv_bal)
-
-    g0_bal = sample_attr([opt], 0, goal_dist, x_b, grid, ens, 200.0, bedroom, "In Competence BAL")
-    print("G0 bal", trajectory_cost(bedroom, grid, g0_bal), g0_bal)
-
-    g1 = sample_attr(demo_trajs, 1, goal_dist, x_b, grid, ens,IG, bedroom, "In Brokenness B+")
-    print("G1", trajectory_cost(bedroom, grid, g1), g1)
-
-    g1_inv = sample_attr(demo_trajs, 1, inv_goal_dist, x_b, grid, ens, IG, bedroom, "In Brokenness B-")
-    print("G1 inv", trajectory_cost(bedroom, grid, g1_inv), g1_inv)
-
-    g1_bal = sample_attr([opt], 1, goal_dist,x_b, grid, ens, 39.5, bedroom, "In Brokenness BAL", max_effort=100)
-    print("G1 bal", trajectory_cost(bedroom, grid, g1_bal), g1_bal)
-
-    g2 = sample_attr(demo_trajs, 2, goal_dist, x_b, grid, ens,IG, bedroom, "In Curiosity B+", max_effort=40)
-    print("G2", trajectory_cost(bedroom, grid, g2), g2)
-
-    g2_inv = sample_attr(demo_trajs, 2, inv_goal_dist,x_b, grid, ens, IG, bedroom, "In Curiosity B-",)
-    print("G2 inv", trajectory_cost(bedroom, grid, g2_inv), g2_inv)
-
-    g2_bal = sample_attr(demo_trajs, 2, goal_dist,x_b, grid, ens, 300.0, bedroom, "In Curiosity BAL")
-    print("G2 bal", trajectory_cost(bedroom, grid, g2_bal), g2_bal)
 
     print("TEST DOMAIN")
     grid, bedroom = load_map("interface/assets/house_test.tmx")
@@ -266,36 +237,16 @@ if __name__ == '__main__':
            (4, 9), (3, 9), (3, 10), (3, 11), (3, 12), (4, 12), (5, 12), (6, 12), (7, 12), (7, 13), (8, 13), (8, 12),
            (8, 11), (9, 11), (9, 12), (9, 13), (10, 13), (10, 12), (10, 11), (11, 11), (11, 10), (12, 10), (13, 10),
            (14, 10), (15, 10), (16, 10), (17, 10), (18, 10), (19, 10), (20, 10)]
-    print("TSK", trajectory_cost(bedroom, grid, opt))
+    opt_cost = trajectory_cost(bedroom, grid, opt)
 
-    g0 = sample_attr([opt], 0, goal_dist, x_b, grid, ens,IG, bedroom, "Test Competence B+")
-    print("G0", trajectory_cost(bedroom, grid, g0), g0)
-
-    g0_inv = sample_attr([opt], 0, inv_goal_dist,x_b, grid, ens, IG, bedroom, "Test Competence B-")
-    print("G0 inv", g0_inv)
-
-    #g0_inv_bal = sample_attr([opt], 0, inv_goal_dist, x_b, grid, ens, 70.0, bedroom, "Test Competence BAL")
-    #print("G0 inv bal", trajectory_cost(bedroom, grid, g0_inv_bal), g0_inv_bal)
-
-    g0_bal = sample_attr([opt], 0, goal_dist,x_b, grid, ens, 400.0, bedroom, "Test Competence BAL")
-    print("G0 bal", trajectory_cost(bedroom, grid, g0_bal), g0_bal)
-
-    g1 = sample_attr([opt], 1, goal_dist, x_b, grid, ens,IG, bedroom, "Test Brokenness B+")
-    print("G1", trajectory_cost(bedroom, grid, g1), g1)
-
-    g1_inv = sample_attr([opt], 1, inv_goal_dist,x_b, grid, ens, IG, bedroom, "Test Brokenness B-")
-    print("G1 inv", trajectory_cost(bedroom, grid, g1_inv), g1_inv)
-
-    g1_bal = sample_attr([opt], 1, goal_dist,x_b, grid, ens, 84.0, bedroom, "Test Brokenness BAL", max_effort=200)
-    print("G1 bal", trajectory_cost(bedroom, grid, g1_bal), g1_bal)
-
-    g2 = sample_attr([opt], 2, goal_dist, x_b, grid, ens,IG, bedroom, "Test Curiosity B+", max_effort=70)
-    print("G2", trajectory_cost(bedroom, grid, g2), g2)
-
-    g2_inv = sample_attr([opt], 2, inv_goal_dist,x_b, grid, ens, IG, bedroom, "Test Curiosity B-")
-    print("G2 inv", trajectory_cost(bedroom, grid, g2_inv), g2_inv)
-
-    g2_bal = sample_attr([opt], 2, goal_dist,x_b, grid, ens, 250.0, bedroom, "Test Curiosity BAL")
-    print("G2 bal", trajectory_cost(bedroom, grid, g2_bal), g2_bal)
-
+    sweep_constraint(opt, goal_dist, 0, grid, bedroom, x_b, ens, opt_cost, "Test Competence B+")
+    sweep_constraint(opt, inv_goal_dist, 0, grid, bedroom, x_b, ens, opt_cost, "Test Competence B-")
+    sweep_constraint(opt, goal_dist, 1, grid, bedroom, x_b, ens, opt_cost, "Test Brokenness B+")
+    sweep_constraint(opt, inv_goal_dist, 1, grid, bedroom, x_b, ens, opt_cost, "Test Brokenness B-")
+    sweep_constraint(opt, goal_dist, 2, grid, bedroom, x_b, ens, opt_cost, "Test Curious B+")
+    sweep_constraint(opt, inv_goal_dist, 2, grid, bedroom, x_b, ens, opt_cost, "Test Curious B-")
     plt.show()
+
+
+if __name__ == '__main__':
+    main()
