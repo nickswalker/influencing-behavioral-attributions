@@ -27,6 +27,7 @@ from search.sampling import sample_neighbors, sample_neighbors_for_pool
 from search.trajectory import TrajectoryNode, ANY_PLAN
 from search.util import load_map
 import torch.nn.functional as F
+import torch.optim.lr_scheduler
 
 from matplotlib import pyplot as plt
 
@@ -35,21 +36,23 @@ np.random.seed(0)
 torch.random.manual_seed(0)
 
 
-def optimize_feats(ens, goal_dist, d, x, max_effort=1250):
+def optimize_feats(ens, goal_dist, d, x, max_effort=200):
     inputs = torch.rand((8192, 11), requires_grad=True)
     if not isinstance(x, torch.Tensor):
         x = torch.tensor(x).float()
     p_marg = marginal_mog_log_prob(*ens.forward(torch.clamp(inputs, 0, 1)), x.reshape([-1, 1, 1]))
     pred_d = p_marg[:,:,d].exp().mean(1).log()
+    # inte = torch.trapz(pred_d.exp() * torch.linspace(0, 1, 120), x)
 
     kl = F.kl_div(pred_d, goal_dist, reduction='none', log_target=False)
     kl = torch.trapz(kl, x)
-    inputs = inputs.detach()[torch.topk(kl,4).indices]
+    inputs = inputs.detach()[torch.topk(kl,64).indices]
+    #inputs = inputs.detach()[torch.topk(inte,64).indices]
     inputs.requires_grad = True
     ens.requires_grad_(False)
-    optimizer = torch.optim.Adam([inputs], lr=0.001)
-
-    for i in range(max_effort):
+    optimizer = torch.optim.Adam([inputs], lr=0.015)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=75, gamma=0.75)
+    for i in range(max_effort + 1):
         optimizer.zero_grad()
         clamped_in = torch.clamp(inputs, 0, 1)
         p_marg = marginal_mog_log_prob(*ens.forward(clamped_in), x.reshape([-1, 1, 1]))
@@ -57,10 +60,14 @@ def optimize_feats(ens, goal_dist, d, x, max_effort=1250):
 
         kl = F.kl_div(pred_d, goal_dist, reduction='none', log_target=False)
         kl = torch.trapz(kl, x)
-        if i % 250 == 0:
-            print(i, torch.min(kl, 0).values.detach().numpy())
+        inte = -torch.trapz(pred_d.exp() * torch.linspace(0, 1, 120), x)
+
+        if i % 50 == 0:
+            print(i, torch.min(kl, 0).values.detach().numpy(), torch.min(inte, 0).values.detach().numpy())
         kl.mean().backward(retain_graph=True)
+        #inte.mean().backward(retain_graph=True)
         optimizer.step()
+        scheduler.step()
     raw_out = inputs[torch.argmin(kl)]
     return torch.clamp(raw_out, 0, 1).detach()
 
@@ -81,6 +88,7 @@ def sample_attr(inits, d, goal_dist, x, grid, ens, goal_region, max_effort=300, 
         pred_d = p_marg[:,:,d].exp().mean(1).log()
 
         kl = F.kl_div(pred_d, goal_dist, reduction='none', log_target=False)
+        #inte = torch.trapz(pred_d * torch.linspace(0, 1, 120), x)
         kl = torch.trapz(kl, x)
         # uncertainty doesn't end up being that useful
         unc = ens_uncertainty_kl(ens, node_batch)
@@ -90,13 +98,13 @@ def sample_attr(inits, d, goal_dist, x, grid, ens, goal_region, max_effort=300, 
         together[2, together[2, :] > cost_threshold] = float('inf')
         # We want distribution to match, so drive kl to 0
         scored = together[1]
-
+        #scored = -inte.detach().numpy()
         #print(f"kl={together[1][scored.argmin()]:.2f} c={together[2][scored.argmin()]:.2f}")
         return scored.T
 
     modificiations = batch_hill_descend([TrajectoryNode(orig, None, goal_region=goal_region, cost=trajectory_cost(goal_region, grid, orig)) for orig in inits],
                                         TrajectoryNode(ANY_PLAN, (None,), goal_region=goal_region), grid,
-                                        batch_min_div, max_tries=max_effort, tolerance=0.0, cost_bound=optimal_cost * cost_threshold, verbose=False)
+                                        batch_min_div, max_tries=max_effort, tolerance=float("-inf"), branch_limit=250, cost_bound=optimal_cost * cost_threshold, verbose=False)
     new = modificiations[-1].trajectory
 
     return new
@@ -106,9 +114,10 @@ def plot_lines(lines, x, goal, name):
     fig = plt.figure()
     cmap = plt.get_cmap('viridis')
     plt.plot(x, goal, label="goal", color="g")
-    for label, (traj, line, cost, kl) in lines.items():
+    for label, (traj, line, cost, kl, ideal_gap) in lines.items():
+        inte = torch.trapz(line * torch.linspace(0, 1, 120), x)
         if label == "Ideal":
-            plt.plot(x, line, label=f"{label} kl={kl:.2f}", color="b")
+            plt.plot(x, line, label=f"{label} kl={kl:.2f} i={inte:.2f}", color="b")
         else:
             label = float(label)
             color = ((label - 1) / 5) * .8 + .2
@@ -116,7 +125,7 @@ def plot_lines(lines, x, goal, name):
             color = cmap(color)
             if label > 6:
                 color = "orange"
-            plt.plot(x, line, label=f"{label:.2f} kl={kl:.2f} c={cost}", color=color)
+            plt.plot(x, line, label=f"{label:.2f} kl={kl:.2f} c={cost} g={ideal_gap:.2f} i={inte:.2f}", color=color)
 
     plt.legend()
     plt.title(name)
@@ -155,14 +164,14 @@ def sweep_constraint(start_traj, goal_dist, d, grid, goal_region, x, ens, opt_co
         line = feats_to_density(traj_feats, ens, x, d)
         kl = F.kl_div(line.log(), goal_dist, reduction='none', log_target=False)
         kl = torch.trapz(kl, x)
-        lines[key] = (traj, line, cost, kl)
         ideal_gap = np.linalg.norm(traj_feats - upper_bound_feats.detach().numpy(), 1)
+        lines[key] = (traj, line, cost, kl, ideal_gap)
         print(f"{key}: c={cost} kl={kl:.2f} gap={ideal_gap:.2f}")
         print_feats(traj_feats)
         print(traj)
         print()
 
-    lines["Ideal"] = (None, ideal_line, None, ideal_kl)
+    lines["Ideal"] = (None, ideal_line, None, ideal_kl, None)
     print(f"Ideal: kl={ideal_kl:.2f}")
     print_feats(upper_bound_feats)
     print()
@@ -189,8 +198,8 @@ def main():
     x = np.linspace(-3, 3, 120)
     x_b = torch.Tensor(x)
     # x = np.mgrid[-3:3:0.05, -3:3:0.05, -3:3:0.05].reshape(3,-1).T
-    goal_dist = torch.Tensor(normal(1, 0.3, x))
-    inv_goal_dist = torch.Tensor(normal(-1, 0.3, x))
+    goal_dist = torch.Tensor(normal(1.5, 0.3, x))
+    inv_goal_dist = torch.Tensor(normal(-1.5, 0.3, x))
 
     """
     opt = astar(CoverageNode(bedroom, (10, 9)), CoverageNode([], (10, 9)), grid, coverage_manhattan)
@@ -214,7 +223,6 @@ def main():
     sweep_constraint(opt, inv_goal_dist, 1, grid, bedroom, x_b, ens, opt_cost, "In Brokenness B-")
     sweep_constraint(opt, goal_dist, 2, grid, bedroom, x_b, ens, opt_cost, "In Curious B+")
     sweep_constraint(opt, inv_goal_dist, 2, grid, bedroom, x_b, ens, opt_cost, "In Curious B-")
-    plt.show()
 
     print("TSK", trajectory_cost(bedroom, grid, opt))
 
