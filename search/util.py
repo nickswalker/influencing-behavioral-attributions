@@ -65,4 +65,13 @@ def pretty_plan(plan):
     return out
 
 
+def in_bounds(grid, point):
+    width, height = len(grid[0]), len(grid)
+    return point[0] < width and 0 <= point[1] < height
+
+
+def traversible(grid, point):
+    return grid[point[1]][point[0]] != 'X'
+
+
 BREAKABLE = "O"

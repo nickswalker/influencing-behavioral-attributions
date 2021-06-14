@@ -1,4 +1,5 @@
 import copy
+import queue
 import random
 
 import numpy as np
@@ -7,6 +8,7 @@ from search.coverage import trajectory_cost
 from search.navigation import PointNode
 from search.metric import manhattan
 from search.routine import astar
+from search.util import in_bounds, traversible
 
 
 class TrajectoryNode:
@@ -126,15 +128,6 @@ def shortcuts(plan, grid, goal_region, neighbors, length_cap=250):
         neighbors.append(new_node)
 
 
-def in_bounds(point, grid):
-    width, height = len(grid[0]), len(grid)
-    return point[0] < width and 0 <= point[1] < height
-
-
-def traversible(point, grid):
-    return grid[point[1]][point[0]] != 'X'
-
-
 def templates(plan, grid, goal_region, neighbors):
     for i, (x, y) in enumerate(plan):
         if i == 0:
@@ -150,8 +143,8 @@ def templates(plan, grid, goal_region, neighbors):
         # We're already going straight
         if straight_2 == plan[i + 2]:
             continue
-        if in_bounds(straight, grid) and in_bounds(straight_2, grid) and traversible(straight, grid) and traversible(
-                straight_2, grid):
+        if in_bounds(grid, straight) and in_bounds(grid, straight_2) and traversible(grid, straight) and traversible(
+                 grid, straight_2):
             new_trajectory = copy.deepcopy(plan)
             # Cut to before the original next point, and then a little further up to cut off the original next point
             prefix, suffix = new_trajectory[:i + 1] + [straight], new_trajectory[i + 3:]

@@ -1,15 +1,19 @@
 import copy
+import queue
 from collections import Counter
+from functools import partial
 
 import numpy as np
 from scipy import signal
+
+from search.util import in_bounds, traversible
 
 GOAL_COV = 0
 OVERLAP = 1
 LENGTH = 2
 STRAIGHTNESS = 3
 HOOKINESS = 4
-CARPET_TIME = 5
+GOAL_DEVIATION = 5
 COLLISION_TIME = 6
 REDUNDANT_COVERAGE = 7
 TOTAL_COVERAGE = 8
@@ -21,7 +25,7 @@ feature_map = {GOAL_COV: "goal_cov",
                  LENGTH: "length",
                  STRAIGHTNESS: "straight template match",
                  HOOKINESS: "hook template match",
-                 CARPET_TIME: "carpet time",
+                 GOAL_DEVIATION: "goal deviation",
                  COLLISION_TIME: "collision time",
                  REDUNDANT_COVERAGE: "redundant coverage",
                  TOTAL_COVERAGE: "total coverage",
@@ -31,16 +35,21 @@ feature_map = {GOAL_COV: "goal_cov",
 
 feature_names = list(feature_map.values())
 
+cached_grid = None
+cached_reachable_size = None
+
 def trajectory_features(goal, grid, plan):
+    global cached_reachable_size, cached_grid
     if len(plan) == 0:
         return (0,0,0,0,0,0,0,0,0,0,0)
     # How many unique states do we visit as a percentage of the plan length (0,1]
     unique_states = set(plan)
     self_overlap = 1. - len(unique_states) / len(plan)
     # [0,1]
-    num_missed = len(set(goal).difference(unique_states))
+    goal_region = set(goal)
+    num_missed = len(goal_region.difference(unique_states))
     goal_cov = 1.0 - (num_missed / len(goal))
-    states_in_coverage_zone = [p for p in plan if p in goal]
+    states_in_coverage_zone = [p for p in plan if p in goal_region]
     covered = Counter(states_in_coverage_zone)
     redundant_coverage = len([v for v in covered.values() if v > 1]) / len(goal)
     # It probably takes ~2x size of goal space number of steps to cover the goal, so let's set 3x as the max
@@ -49,22 +58,32 @@ def trajectory_features(goal, grid, plan):
     points = np.array(plan, dtype=np.int)
     diffs_1 = np.diff(points, axis=0)
     diffs_2 = np.diff(points, 2, axis=0)
-    carpet_points = []
     breakage = 0
+    first_in_goal = len(plan)
+    last_in_goal = 0
     for i, point in enumerate(plan):
         contents = grid[point[1]][point[0]]
-        if contents == "C":
-            carpet_points.append(point)
-        elif contents == "O":
+        if contents == "O":
             breakage += 1
-    carpet_time = min(1.0, len(carpet_points) / len(goal))
+        if i < first_in_goal and point in goal_region:
+            first_in_goal = i
+        if last_in_goal < i and point in goal_region:
+            last_in_goal = i
+
+    goal_deviation = 1.0 - (max(last_in_goal - first_in_goal, 0) / len(plan))
     breakage = min(1.0, breakage / len(goal))
     idle_time = (diffs_1 == [0, 0]).all(-1).sum() / len(diffs_1)
 
+    width, height = len(grid[0]), len(grid)
+
     hook_y = signal.correlate2d(diffs_1, np.array([[0, 1], [1, 0], [0, -1]]))
+    hook_y_2 = signal.correlate2d(diffs_1, np.array([[-1, 0], [0, 1], [0, 1]]))
     hook_y_count = (abs(hook_y) == [0, 3, 0]).all(-1).sum()
+    hook_y2_count = (abs(hook_y_2) == [0, 3, 0]).all(-1).sum()
     hook_x = signal.correlate2d(diffs_1, np.array([[1, 0], [0, 1], [-1, 0]]))
+    hook_x_2 = signal.correlate2d(diffs_1, np.array([[0, -1], [1, 0], [1, 0]]))
     hook_x_count = (abs(hook_x) == [0, 3, 0]).all(-1).sum()
+    hook_x2_count = (abs(hook_x_2) == [0, 3, 0]).all(-1).sum()
     start_stop = signal.correlate(abs(diffs_1), np.array([[10, 10], [-10, -10]]))
     # We always stop at the end, so less one. Exception is degenerate short trajectories
     start_stop_count = max((start_stop[:, 1] == 10).sum() - 1, 0)
@@ -75,27 +94,32 @@ def trajectory_features(goal, grid, plan):
         straightness = 0
     else:
         # Each hook template match indicates 3 steps spent "in a turn"
-        hookiness = (hook_x_count + hook_y_count) * 3 / len(hook_y)
+        hookiness = (hook_x_count + hook_y_count + hook_x2_count + hook_y2_count) * 2 / (len(hook_y))
+        hookiness = min(hookiness, 1.0)
         # Second diff of 0 means straight-line motion. Count number of rows with this case and sum
         straight_time = (diffs_2 == [0, 0]).all(-1).sum()
         straightness = straight_time / len(diffs_2)
 
     covered_x, covered_y = set([p[0] for p in unique_states]), set([p[1] for p in unique_states])
-    x_coverage = len(covered_x) / len(grid[0])
-    y_coverage = len(covered_y) / len(grid)
-    total_coverage = len(unique_states) / (len(grid) * len(grid[0]))
+    x_coverage = len(covered_x) / width
+    y_coverage = len(covered_y) / height
+    if cached_reachable_size is None or id(grid) != cached_grid:
+        cached_grid = id(grid)
+        cached_reachable_size = count_reachable(grid, (width // 2, height // 2))
+    total_coverage = len(unique_states) / cached_reachable_size
 
     return (goal_cov,
             self_overlap,
             normalized_plan_length,
             straightness,
             hookiness,
-            carpet_time,
+            goal_deviation,
             breakage,
             redundant_coverage,
             total_coverage,
             idle_time,
             start_stopiness)
+
 
 def print_feats(feats):
     for val, name in zip(feats, feature_names):
@@ -152,6 +176,23 @@ class CoverageNode:
         return neighbors
 
 
+def count_reachable(grid, start):
+    reachable = set()
+    reachable.add(start)
+    frontier = queue.Queue()
+    frontier.put(start)
+    while not frontier.empty():
+        x,y = frontier.get()
+        reachable.add((x,y))
+        neighbor_points = [(x - 1, y), (x, y - 1), (x, y + 1), (x + 1, y)]
+        neighbor_points = filter(partial(in_bounds, grid), neighbor_points)
+        neighbor_points = filter(partial(traversible, grid), neighbor_points)
+        neighbor_points = filter(lambda x: x not in reachable, neighbor_points)
+        for point in neighbor_points:
+            frontier.put(point)
+    return len(reachable)
+
+
 def trajectory_cost(goal, grid, plan):
     step_cost = len(plan)
     states_in_coverage_zone = set([p for p in plan if p in goal])
@@ -162,4 +203,4 @@ def trajectory_cost(goal, grid, plan):
         if contents == "O":
             breakage += 5
 
-    return step_cost + breakage - len(states_in_coverage_zone) + num_missed
+    return step_cost + breakage - len(states_in_coverage_zone) + 3 * num_missed

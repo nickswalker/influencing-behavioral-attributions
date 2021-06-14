@@ -31,7 +31,7 @@ def load_demo_pool(file_names):
     return trajectories, prompts
 
 
-def process_turk_files(paths, filter_rejected=True, traj_file=None):
+def process_turk_files(paths, filter_rejected=True, traj_file=None, featurizer=None):
     if not isinstance(paths, list):
         paths = [paths]
     def drop_con_number(name):
@@ -144,6 +144,8 @@ def process_turk_files(paths, filter_rejected=True, traj_file=None):
         # Add feats and traj data
         if features is not None:
             condition_ratings["features"] = condition_ratings["id"].apply(lambda x: features[x]).to_numpy()
+        if featurizer is not None:
+            condition_ratings["features"] = condition_ratings["id"].apply(lambda x: featurizer(trajectories[x])).to_numpy()
         condition_ratings["trajectories"] = condition_ratings["id"].apply(lambda x: trajectories[x])
 
     return condition_ratings, demos, other_data, comparison
