@@ -10,6 +10,8 @@ from models.mdn.lit_mdn import LitMDN
 from models.util import LitProgressBar
 import numpy as np
 
+from processing.mappings import factor_names
+
 
 def collate_fn_padd(batch):
     '''
@@ -34,9 +36,10 @@ def train_mdn(x, y, x_val, y_val, x_test, y_test, hparams={}, name=None):
         name = "mdn"
     # initialize the model
     module = LitMDN(in_features=11, out_features=3, hidden_size=hparams["hidden_size"], gaussians=hparams["gaussians"], noise_regularization=hparams["noise_regularization"])
-    y = y[["factor0", "factor1", "factor2"]].to_numpy()
-    y_val = y_val[["factor0", "factor1", "factor2"]].to_numpy()
-    y_test = y_test[["factor0", "factor1", "factor2"]].to_numpy()
+    y = y[factor_names].to_numpy()
+    y_val = y_val[factor_names].to_numpy()
+    if x_test is not None:
+        y_test = y_test[factor_names].to_numpy()
 
     # configure logging at the root level of lightning
     logging.getLogger("pytorch_lightning").setLevel(logging.ERROR)
@@ -44,7 +47,8 @@ def train_mdn(x, y, x_val, y_val, x_test, y_test, hparams={}, name=None):
     warnings.filterwarnings("ignore")
     train_data = TensorDataset(torch.from_numpy(np.vstack(x["features"])).float(), torch.from_numpy(y).float())
     val_data = TensorDataset(torch.from_numpy(np.vstack(x_val["features"])).float(), torch.from_numpy(y_val).float())
-    test_data = TensorDataset(torch.from_numpy(np.vstack(x_test["features"])).float(), torch.from_numpy(y_test).float())
+    if x_test is not None:
+        test_data = TensorDataset(torch.from_numpy(np.vstack(x_test["features"])).float(), torch.from_numpy(y_test).float())
     checkpoint_callback = ModelCheckpoint(monitor='val_loss')
     early_stop_callback = EarlyStopping(
         monitor='val_loss',
@@ -61,7 +65,7 @@ def train_mdn(x, y, x_val, y_val, x_test, y_test, hparams={}, name=None):
     i = 0
     while True:
         try:
-            trainer.fit(module, DataLoader(train_data, batch_size=32, shuffle=True), DataLoader(val_data))
+            trainer.fit(module, DataLoader(train_data, batch_size=32, shuffle=True), DataLoader(val_data, batch_size=len(val_data)))
             break
         except ValueError as e:
             i += 1
@@ -69,7 +73,10 @@ def train_mdn(x, y, x_val, y_val, x_test, y_test, hparams={}, name=None):
             print(f"Retrying {i}...")
 
     # trainer.test(module, DataLoader(test_data), verbose=False)[0]
-    results = trainer.test(None, DataLoader(test_data, batch_size=len(test_data)), ckpt_path="best", verbose=False)[0]
-    results = {**trainer.logged_metrics, **results}
+    if x_test is not None:
+        results = trainer.test(None, DataLoader(test_data, batch_size=len(test_data)), ckpt_path="best", verbose=False)[0]
+        results = {**trainer.logged_metrics, **results}
+    else:
+        results = trainer.logged_metrics
     best_validation = LitMDN.load_from_checkpoint(checkpoint_path=checkpoint_callback.best_model_path)
     return results, best_validation, checkpoint_callback.best_model_path

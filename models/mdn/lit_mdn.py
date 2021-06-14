@@ -35,8 +35,10 @@ class LitMDN(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         x, y = batch
         feats = self.features(x)
-        loss = torch.mean(self.mdn.nll(feats, y))
+        nll = self.mdn.nll(feats, y)
+        loss = torch.mean(nll)
         self.log('val_loss', loss)
+        self.log('val_loss_std', torch.std(nll))
         return loss
 
     def test_step(self, batch, batch_idx):
