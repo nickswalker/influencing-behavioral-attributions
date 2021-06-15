@@ -1,6 +1,7 @@
 import copy
 import queue
 import random
+from functools import partial
 
 import numpy as np
 
@@ -168,6 +169,7 @@ def seek_collision(plan, grid, goal_region, neighbors):
         neighbor_points = [(x - 1, y), (x, y - 1), (x, y + 1), (x + 1, y), (x, y)]
         # Don't go straight to the next point; that was the original plan...
         neighbor_points.remove(orig_next_point)
+        neighbor_points = filter(partial(traversible, grid), neighbor_points)
         collision_points = [link for link in neighbor_points if grid[link[1]][link[0]] == 'O']
 
         for next_point in collision_points:
