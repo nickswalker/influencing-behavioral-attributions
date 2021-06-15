@@ -71,7 +71,8 @@ def in_bounds(grid, point):
 
 
 def traversible(grid, point):
-    return grid[point[1]][point[0]] != 'X'
+    width, height = len(grid[0]), len(grid)
+    return point[0] < width and 0 <= point[1] < height and grid[point[1]][point[0]] != 'X'
 
 
 BREAKABLE = "O"

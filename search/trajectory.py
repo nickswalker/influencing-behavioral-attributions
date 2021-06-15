@@ -9,7 +9,7 @@ from search.coverage import trajectory_cost
 from search.navigation import PointNode
 from search.metric import manhattan
 from search.routine import astar
-from search.util import in_bounds, traversible
+from search.util import traversible
 
 
 class TrajectoryNode:
@@ -74,7 +74,6 @@ class TrajectoryNode:
 
 
 def change_actions(plan, grid, goal_region, neighbors):
-    width, height = len(grid[0]), len(grid)
     for i, (x, y) in enumerate(plan):
         if i == len(plan) - 2:
             break
@@ -83,11 +82,9 @@ def change_actions(plan, grid, goal_region, neighbors):
         # Don't go straight to the next point; that was the original plan...
         neighbor_points.remove(orig_next_point)
         # Don't go off the grid
-        neighbor_points = filter(lambda p: 0 <= p[0] < width and 0 <= p[1] < height, neighbor_points)
-        # Eliminate untraversable
-        accessible_points = [link for link in neighbor_points if grid[link[1]][link[0]] != 'X']
+        neighbor_points = filter(partial(traversible, grid), neighbor_points)
 
-        for next_point in accessible_points:
+        for next_point in neighbor_points:
             new_trajectory = copy.deepcopy(plan)
             # Cut to before the original next point, and then a little further up to cut off the original next point
             prefix, suffix = new_trajectory[:i + 1], new_trajectory[i + 2:]
@@ -144,8 +141,7 @@ def templates(plan, grid, goal_region, neighbors):
         # We're already going straight
         if straight_2 == plan[i + 2]:
             continue
-        if in_bounds(grid, straight) and in_bounds(grid, straight_2) and traversible(grid, straight) and traversible(
-                 grid, straight_2):
+        if traversible(grid, straight) and traversible(grid, straight_2):
             new_trajectory = copy.deepcopy(plan)
             # Cut to before the original next point, and then a little further up to cut off the original next point
             prefix, suffix = new_trajectory[:i + 1] + [straight], new_trajectory[i + 3:]
