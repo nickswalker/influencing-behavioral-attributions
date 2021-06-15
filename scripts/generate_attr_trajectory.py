@@ -4,6 +4,7 @@ import random
 from functools import partial
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn.functional as F
 import torch.optim.lr_scheduler
@@ -17,13 +18,31 @@ from search.coverage import trajectory_features, trajectory_cost, print_feats
 from search.routine import batch_hill_descend
 from search.trajectory import TrajectoryNode, ANY_PLAN
 from search.util import load_map
+from processing.mappings import  factor_names
+import shelve
+
+
+def shelve_it(file_name):
+    d = shelve.open(file_name, protocol=5)
+
+    def decorator(func):
+        def new_func(*args):
+            key = repr(tuple(args))
+            if key not in d:
+                d[key] = func(*args)
+            return d[key]
+
+        return new_func
+
+    return decorator
 
 random.seed(0)
 np.random.seed(0)
 torch.random.manual_seed(0)
 
 
-def optimize_feats(ens, goal_dist, d, x, max_effort=200):
+@shelve_it("optimized_feats")
+def optimize_feats(ens, goal_dist, d, x, max_effort):
     inputs = torch.rand((8192, 11), requires_grad=True)
     if not isinstance(x, torch.Tensor):
         x = torch.tensor(x).float()
@@ -49,17 +68,17 @@ def optimize_feats(ens, goal_dist, d, x, max_effort=200):
         kl = torch.trapz(kl, x)
         inte = -torch.trapz(pred_d.exp() * torch.linspace(0, 1, 120), x)
 
-        if i % 50 == 0:
+        if i % 25 == 0:
             print(i, torch.min(kl, 0).values.detach().numpy(), torch.min(inte, 0).values.detach().numpy())
         kl.mean().backward(retain_graph=True)
         #inte.mean().backward(retain_graph=True)
         optimizer.step()
         scheduler.step()
     raw_out = inputs[torch.argmin(kl)]
-    return torch.clamp(raw_out, 0, 1).detach()
+    return torch.clamp(raw_out, 0, 1).detach().numpy()
 
 
-def sample_attr(inits, d, goal_dist, x, grid, ens, goal_region, max_effort=300, optimal_cost=None, cost_threshold=2):
+def sample_attr(inits, d, goal_dist, x, grid, ens, goal_region, max_effort=750, optimal_cost=None, cost_threshold=None):
     inits = [traj for traj in inits if len(traj) > 5]
 
     def batch_min_div(nodes, goal):
@@ -111,28 +130,6 @@ def polish_trajectory(inits, grid, goal_region, max_effort=300):
     return new
 
 
-def plot_lines(lines, x, goal, name):
-    fig = plt.figure()
-    cmap = plt.get_cmap('viridis')
-    plt.plot(x, goal, label="goal", color="g")
-    for label, (traj, line, cost, kl, ideal_gap) in lines.items():
-        inte = torch.trapz(line * torch.linspace(0, 1, 120), x)
-        if label == "Ideal":
-            plt.plot(x, line, label=f"{label} kl={kl:.2f} i={inte:.2f}", color="b")
-        else:
-            label = float(label)
-            color = ((label - 1) / 5) * .8 + .2
-            color = min(color, 1.0)
-            color = cmap(color)
-            if label > 6:
-                color = "orange"
-            plt.plot(x, line, label=f"{label:.2f} kl={kl:.2f} c={cost} g={ideal_gap:.2f} i={inte:.2f}", color=color)
-
-    plt.legend()
-    plt.title(name)
-    return fig
-
-
 def feats_to_density(feats, ens, x, d):
     if not isinstance(feats, torch.Tensor):
         feats = torch.Tensor(feats)
@@ -142,43 +139,89 @@ def feats_to_density(feats, ens, x, d):
     return pred_d
 
 
-def sweep_constraint(start_traj, goal_dist, d, grid, goal_region, x, ens, opt_cost, name):
-    vals = [1, 1.25, 1.5, 1.75, 2, 3, 4, 5, 10]
+def sweep_constraint(vals, start_traj, goal_dist, d, grid, goal_region, x, ens, opt_cost, upper_bound_feats):
+    sweep_results = []
 
     def get_traj_for_suboptimality(val):
         featurizer = partial(trajectory_features, goal_region, grid)
         TrajectoryNode.featurizer = featurizer
         return sample_attr([start_traj], d, goal_dist, x, grid, ens, goal_region,
                                     optimal_cost=opt_cost, cost_threshold=val)
-    trajs = Parallel(n_jobs=len(vals),verbose=0)(delayed(get_traj_for_suboptimality)(val) for val in vals)
+    trajs = Parallel(n_jobs=20, verbose=0)(delayed(get_traj_for_suboptimality)(val) for val in vals)
     costs = [trajectory_cost(goal_region, grid, traj) for traj in trajs]
 
-    print(name, "******************************************************")
     lines = {str(val): (traj, cost) for val, traj, cost in zip(vals, trajs, costs)}
-    upper_bound_feats = optimize_feats(ens, goal_dist, d, x)
+
+    start_feats = TrajectoryNode.featurizer(start_traj)
+    start_line = feats_to_density(start_feats, ens, x, d)
+    kl = F.kl_div(start_line.log(), goal_dist, reduction='none', log_target=False)
+    start_kl = torch.trapz(kl, x).item()
+    sweep_results.append((start_traj, start_feats, opt_cost, None, start_kl))
+
     ideal_line = feats_to_density(upper_bound_feats, ens, x, d)
     kl = F.kl_div(ideal_line.log(), goal_dist, reduction='none', log_target=False)
-    ideal_kl = torch.trapz(kl, x)
+    ideal_kl = torch.trapz(kl, x).item()
+    sweep_results.append((None, upper_bound_feats, None, None, ideal_kl))
 
     for key, (traj, cost) in lines.items():
         traj_feats = TrajectoryNode.featurizer(traj)
         line = feats_to_density(traj_feats, ens, x, d)
         kl = F.kl_div(line.log(), goal_dist, reduction='none', log_target=False)
-        kl = torch.trapz(kl, x)
-        ideal_gap = np.linalg.norm(traj_feats - upper_bound_feats.detach().numpy(), 1)
-        lines[key] = (traj, line, cost, kl, ideal_gap)
-        print(f"{key}: c={cost} kl={kl:.2f} gap={ideal_gap:.2f}")
-        print_feats(traj_feats)
-        print(traj)
-        print()
+        kl = torch.trapz(kl, x).item()
+        sweep_results.append( (traj, traj_feats, cost, float(key), kl))
 
-    lines["Ideal"] = (None, ideal_line, None, ideal_kl, None)
-    print(f"Ideal: kl={ideal_kl:.2f}")
-    print_feats(upper_bound_feats)
-    print()
+    return pd.DataFrame(data=sweep_results, columns=["trajectory", "features", "cost", "floor","kl"])
 
-    line_fig = plot_lines(lines, x, goal_dist, name)
 
+def plot_res(data, x, ens, goal, d, name):
+    fig = plt.figure()
+    cmap = plt.get_cmap('viridis')
+    plt.plot(x, goal, label="goal", color="g")
+    for i, (traj, features, cost, floor, kl) in data.iterrows():
+        line = feats_to_density(features, ens, x, d)
+
+        if np.isnan(floor):
+            label = "Ideal"
+            color = "blue"
+        else:
+            label = str(floor)
+            color = np.log10(floor) / 1
+            color = min(color, 1.0)
+            color = cmap(color)
+
+        plt.plot(x, line, label=label, color=color)
+
+    plt.xlabel("Factor score")
+    #plt.legend()
+    plt.title(name)
+    return fig
+
+
+def plot_sensitivity(data, x, name):
+    fig = plt.figure()
+    plt.xscale("log")
+    plt.xlabel("Suboptimality")
+    plt.ylabel("KL divergence")
+    plt.plot(data["floor"], data["kl"])
+    plt.title(name)
+    return fig
+
+
+def print_res(res):
+    for i, (traj, features, cost, floor, kl) in res.iterrows():
+        print(f"Subpotimality: {floor} kl: {kl} cost: {cost}")
+        print_feats(features)
+
+
+from matplotlib.backends.backend_pdf import PdfPages
+
+def multipage(filename, figs=None, dpi=200):
+    pp = PdfPages(filename)
+    if figs is None:
+        figs = [plt.figure(n) for n in plt.get_fignums()]
+    for fig in figs:
+        fig.savefig(pp, format='pdf')
+    pp.close()
 
 def main():
     grid, bedroom = load_map("interface/assets/house.tmx")
@@ -212,14 +255,29 @@ def main():
     opt_cost = trajectory_cost(bedroom, grid, opt)
     print(opt, opt_cost, opt)
 
-    sweep_constraint(opt, goal_dist, 0, grid, bedroom, x_b, ens, opt_cost, "In Competence B+")
-    sweep_constraint(opt, inv_goal_dist, 0, grid, bedroom, x_b, ens, opt_cost, "In Competence B-")
-    sweep_constraint(opt, goal_dist, 1, grid, bedroom, x_b, ens, opt_cost, "In Brokenness B+")
-    sweep_constraint(opt, inv_goal_dist, 1, grid, bedroom, x_b, ens, opt_cost, "In Brokenness B-")
-    sweep_constraint(opt, goal_dist, 2, grid, bedroom, x_b, ens, opt_cost, "In Curious B+")
-    sweep_constraint(opt, inv_goal_dist, 2, grid, bedroom, x_b, ens, opt_cost, "In Curious B-")
+    pos_upper_bounds = [optimize_feats(ens, goal_dist, i, x, 200) for i in range(3)]
+    neg_upper_bounds = [optimize_feats(ens, inv_goal_dist, i, x, 200) for i in range(3)]
 
-    print("TEST DOMAIN")
+    vals = np.logspace(0, 1, 20)
+    np.insert(vals, np.searchsorted(vals, [2, 4, 8]), [2, 4, 8])
+    for i, factor_name in enumerate(factor_names):
+        name = f"in_{factor_name}_pos"
+        print(name)
+        pos_res = sweep_constraint(vals, opt, goal_dist, i, grid, bedroom, x_b, ens, opt_cost, pos_upper_bounds[i])
+        pos_res.to_csv(name + ".csv")
+        plot_res(pos_res, x_b, ens, goal_dist, i, name)
+        plot_sensitivity(pos_res,x_b, name)
+        print_res(pos_res)
+        """ name = f"in_{factor_name}_neg"
+        print(name)
+        neg_res = sweep_constraint(vals, opt, inv_goal_dist, i, grid, bedroom, x_b, ens, opt_cost, neg_upper_bounds[i])
+        neg_res.to_csv(name + ".csv")
+        plot_res(neg_res, x_b, ens, inv_goal_dist, i, name)
+        plot_sensitivity(neg_res,x_b, name)
+        print_res(neg_res)"""
+
+    multipage("in.pdf")
+
     grid, bedroom = load_map("interface/assets/house_test.tmx")
     featurizer = partial(trajectory_features, bedroom, grid)
     TrajectoryNode.featurizer = featurizer
@@ -234,14 +292,24 @@ def main():
     opt_cost = trajectory_cost(bedroom, grid, opt)
     print(opt, opt_cost, opt)
 
-    sweep_constraint(opt, goal_dist, 0, grid, bedroom, x_b, ens, opt_cost, "Test Competence B+")
-    sweep_constraint(opt, inv_goal_dist, 0, grid, bedroom, x_b, ens, opt_cost, "Test Competence B-")
-    sweep_constraint(opt, goal_dist, 1, grid, bedroom, x_b, ens, opt_cost, "Test Brokenness B+")
-    sweep_constraint(opt, inv_goal_dist, 1, grid, bedroom, x_b, ens, opt_cost, "Test Brokenness B-")
-    sweep_constraint(opt, goal_dist, 2, grid, bedroom, x_b, ens, opt_cost, "Test Curious B+")
-    sweep_constraint(opt, inv_goal_dist, 2, grid, bedroom, x_b, ens, opt_cost, "Test Curious B-")
-    plt.show()
+    for i, factor_name in enumerate(factor_names):
+        name = f"test_{factor_name}_pos"
+        print(name)
+        pos_res = sweep_constraint(vals, opt, goal_dist, i, grid, bedroom, x_b, ens, opt_cost, pos_upper_bounds[i])
+        pos_res.to_csv(name + ".csv")
+        plot_res(pos_res, x_b, ens, goal_dist, i, name)
+        plot_sensitivity(pos_res, x_b, name)
+        print_res(pos_res)
 
+        """name = f"test_{factor_name}_neg"
+        print(name)
+        neg_res = sweep_constraint(vals, opt, inv_goal_dist, i, grid, bedroom, x_b, ens, opt_cost, neg_upper_bounds[i])
+        neg_res.to_csv(name + ".csv")
+        plot_res(neg_res, x_b, ens, inv_goal_dist, i, name)
+        plot_sensitivity(neg_res,x_b, name)
+        print_res(neg_res)"""
+
+    multipage("test.pdf")
 
 if __name__ == '__main__':
     main()
