@@ -2,12 +2,8 @@ import math
 
 import numpy as np
 import pandas as pd
-import torch
-from factor_analyzer import FactorAnalyzer
-from matplotlib import pyplot as plt, ticker
+from matplotlib import pyplot as plt
 from sklearn.metrics import plot_confusion_matrix
-
-from processing.mappings import question_code_to_name
 
 
 def plot_components(components, ax, question_names, condition_name, title_prefix=""):
@@ -91,10 +87,25 @@ def make_scatterplot(feature_names, question, data):
     return plt.gcf()
 
 
-def make_fa_plots(data, analysis):
+def attribution_scatter(attrs):
+    fig = plt.figure()
+    ax = fig.add_subplot(projection='3d')
+    ax.scatter(*attrs.T.to_numpy(), marker="o")
+    ax.set_xlim(-3, 3)
+    ax.set_ylim(-3, 3)
+    ax.set_zlim(-3, 3)
+
+    ax.set_xlabel('Competence')
+    ax.set_ylabel('Brokeness')
+    ax.set_zlabel('Curiosity')
+
+    return fig
+
+
+def make_fa_plots(data, analysis, question_names):
     # Run factor analysis by condition
     fig, ax = plt.subplots(1, 1, figsize=(8.5, 11))
-    plot_components(analysis.loadings_, ax, list(question_code_to_name.values()), "All", title_prefix="FA ")
+    plot_components(analysis.loadings_, ax, question_names, "All", title_prefix="FA ")
 
     """
     # scikit's FA doesn't have rotations, so it's harder to interpret

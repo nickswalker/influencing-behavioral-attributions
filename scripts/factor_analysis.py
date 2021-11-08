@@ -1,3 +1,5 @@
+# We have to enable this because it's experimental
+from sklearn.experimental import enable_iterative_imputer  # noqa
 from sklearn.impute import IterativeImputer
 
 from processing.loading import process_turk_files
@@ -5,13 +7,14 @@ import numpy as np
 import pandas as pd
 from joblib import dump
 from factor_analyzer import FactorAnalyzer
+from processing.mappings import old_question_names as all_question_names
 
 condition_ratings = []
 demos = []
 other_data = []
 max_id = 0
 for base in ["pilot1", "active1", "active2", "mdn_active1", "mdn_active2"]:
-    cr, d, o = process_turk_files(base + ".csv", traj_file=base + "_trajs.json")
+    cr, d, o, _ = process_turk_files("data/" + base + ".csv", traj_file="data/" + base + "_trajs.json")
     q_names = [q_name for q_name in all_question_names if q_name in cr.columns]
     # if "inquisitive" in cr.columns:
     #    cr.drop(columns=["inquisitive"], inplace=True)
@@ -33,61 +36,60 @@ all_demos = pd.concat(demos)
 
 # Create factor loadings
 # Original, first SVM pilot factors
-num_factors = 3
 first_step_data = condition_ratings[0]
 first_q_names = [q_name for q_name in all_question_names if q_name in first_step_data.columns]
-factor_names = ["factor" + str(i) for i in range(num_factors)]
-exp_transformer = FactorAnalyzer(n_factors=num_factors, rotation="promax",)
-analysis = exp_transformer.fit(first_step_data[first_q_names].to_numpy())
+
+transformer = FactorAnalyzer(n_factors=3, rotation="promax", )
+analysis = transformer.fit(first_step_data[first_q_names].to_numpy())
 
 # Analysis across three SVM pilot factor
-exp_transformer2 = FactorAnalyzer(n_factors=4, rotation="promax")
-analysis2 = exp_transformer2.fit(pd.concat(condition_ratings[:3])[first_q_names].to_numpy())
+transformer2_3factor = FactorAnalyzer(n_factors=3, rotation="promax")
+analysis23 = transformer2_3factor.fit(pd.concat(condition_ratings[:3])[first_q_names].to_numpy())
 
-exp_transformer3 = FactorAnalyzer(n_factors=num_factors, rotation="promax")
-analysis3 = exp_transformer3.fit(pd.concat(condition_ratings[:3])[first_q_names].to_numpy())
+transformer2_4factor = FactorAnalyzer(n_factors=4, rotation="promax")
+analysis24 = transformer2_4factor.fit(pd.concat(condition_ratings[:3])[first_q_names].to_numpy())
 
-exp_transformer34 = FactorAnalyzer(n_factors=4, rotation="promax")
-analysis34 = exp_transformer34.fit(pd.concat(condition_ratings[:3])[first_q_names].to_numpy())
+transformer2_5factor = FactorAnalyzer(n_factors=5, rotation="promax")
+analysis25 = transformer2_5factor.fit(pd.concat(condition_ratings[:3])[first_q_names].to_numpy())
 
-exp_transformer35 = FactorAnalyzer(n_factors=5, rotation="promax")
-analysis35 = exp_transformer35.fit(pd.concat(condition_ratings[:3])[first_q_names].to_numpy())
-
+# It became apparent that this item wasn't working
 small_question_names = first_q_names.copy()
 small_question_names.remove("lazy")
 
+transformer4 = FactorAnalyzer(n_factors=3, rotation="promax")
+analysis4 = transformer4.fit(pd.concat(condition_ratings[:3])[small_question_names].to_numpy())
 
-exp_transformer3s = FactorAnalyzer(n_factors=num_factors, rotation="promax")
-analysis3s = exp_transformer3s.fit(pd.concat(condition_ratings[:3])[small_question_names].to_numpy())
-
+# And finally that this item too was weak
 small_question_names.remove("energetic")
 
+transformer5_3factor = FactorAnalyzer(n_factors=3, rotation="promax")
+analysis53 = transformer5_3factor.fit(pd.concat(condition_ratings[:3])[small_question_names].to_numpy())
 
-exp_transformer3ss = FactorAnalyzer(n_factors=num_factors, rotation="promax")
-analysis3ss = exp_transformer3ss.fit(pd.concat(condition_ratings[:3])[small_question_names].to_numpy())
+transformer5_4factor = FactorAnalyzer(n_factors=4, rotation="promax")
+analysis54 = transformer5_4factor.fit(pd.concat(condition_ratings[:3])[small_question_names].to_numpy())
 
-exp_transformer3ss4 = FactorAnalyzer(n_factors=4, rotation="promax")
-analysis3ss4 = exp_transformer3ss4.fit(pd.concat(condition_ratings[:3])[small_question_names].to_numpy())
+transformer5_5factor = FactorAnalyzer(n_factors=5, rotation="promax")
+analysis55 = transformer5_5factor.fit(pd.concat(condition_ratings[:3])[small_question_names].to_numpy())
 
-exp_transformer3ss5 = FactorAnalyzer(n_factors=5, rotation="promax")
-analysis3ss5 = exp_transformer3ss5.fit(pd.concat(condition_ratings[:3])[small_question_names].to_numpy())
-
-
+# These analyses came too late to  make it into our scale design
 # With new data (inquisitive added)
-exp_transformer4 = FactorAnalyzer(n_factors=4, rotation="promax")
-analysis4 = exp_transformer4.fit(pd.concat(condition_ratings[3:])[all_question_names].to_numpy())
+transformer6 = FactorAnalyzer(n_factors=4, rotation="promax")
+analysis6 = transformer6.fit(pd.concat(condition_ratings[3:])[all_question_names].to_numpy())
 
+# We retrace some steps of dropping items with this newer data
 # New data, lazy dropped
 new_small_question_names = all_question_names.copy()
 new_small_question_names.remove("lazy")
-exp_transformer4s = FactorAnalyzer(n_factors=3, rotation="promax")
-analysis4s = exp_transformer4s.fit(pd.concat(condition_ratings[3:])[new_small_question_names].to_numpy())
+transformer7 = FactorAnalyzer(n_factors=3, rotation="promax")
+analysis7 = transformer7.fit(pd.concat(condition_ratings[3:])[new_small_question_names].to_numpy())
 
 new_small_question_names.remove("energetic")
 
-exp_transformer4ss = FactorAnalyzer(n_factors=3, rotation="promax")
-analysis4ss = exp_transformer4ss.fit(pd.concat(condition_ratings[3:])[new_small_question_names].to_numpy())
+transformer8 = FactorAnalyzer(n_factors=3, rotation="promax")
+analysis8 = transformer8.fit(pd.concat(condition_ratings[3:])[new_small_question_names].to_numpy())
 
-chosen_transformer = exp_transformer3ss
+chosen_transformer = transformer5_3factor
 question_names = small_question_names
-dump(chosen_transformer, "factor_model.pickle")
+
+print(np.around(chosen_transformer.loadings_, 2))
+#dump(chosen_transformer, "factor_model.pickle")

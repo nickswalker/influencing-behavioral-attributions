@@ -1,6 +1,5 @@
 import seaborn as sns
 import matplotlib.pyplot as plt
-from scipy.stats import sem
 import pandas as pd
 import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
@@ -70,7 +69,7 @@ plt.gca().set_xlabel("Train Data Used (%)")
 plt.gca().set_ylabel("Average Test NLL")
 plt.legend(["C=1", "C=4", "Ens C=4"])
 data_percentage_plot = plt.gcf()
-data_percentage_plot.set_size_inches(3.5, 2.0)
+data_percentage_plot.set_size_inches(5.5, 2.0)
 pp = PdfPages("sum_plots.pdf")
 
 # Save and remove excess whitespace

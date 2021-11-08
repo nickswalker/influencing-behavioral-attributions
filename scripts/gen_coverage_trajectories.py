@@ -1,3 +1,8 @@
+"""
+Takes an input pool of demonstrated trajectories and generates
+additional samples to form a pool of trajectories with diverse
+featurizations.
+"""
 import itertools
 import json
 

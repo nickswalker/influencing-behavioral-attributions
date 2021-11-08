@@ -1,23 +1,21 @@
-import glob
-import itertools
+"""
+Summarize and run basic analysis on MTurk returns
+"""
 import json
-import os
 
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
+import seaborn as sns
 from factor_analyzer import FactorAnalyzer, ModelSpecificationParser, ConfirmatoryFactorAnalyzer
+from joblib import load
+from matplotlib.backends.backend_pdf import PdfPages
 from sklearn.experimental import enable_iterative_imputer  # noqa
-
 from sklearn.impute import IterativeImputer
 
-import numpy as np
-from joblib import load, dump
-
-from matplotlib.backends.backend_pdf import PdfPages
-
-from models.plotting import plot_histograms, make_scatterplot, make_fa_plots, make_conf_mat_plots, make_density
-from models.simple import fit_lin_reg
+from models.plotting import make_fa_plots, make_density
 from processing.loading import process_turk_files
-from processing.mappings import old_question_names, short_question_names, question_names, feature_names
+from processing.mappings import short_question_names, question_names, factor_names
 
 factor_structure = {"competent":
                         ["competent", "efficient", "focused", "intelligent", "reliable", "responsible"],
@@ -33,8 +31,7 @@ demo_trajs = []
 demo_exps = []
 demo_prompts = []
 demo_wids = []
-#for base in ["mdn_active1", "mdn_active2"]:
-for base in ["pilot1"]:
+for base in ["pilot1", "active1", "active2", "mdn_active1", "mdn_active2"]:
     cr, d, o, comparison = process_turk_files(base + ".csv", traj_file=base + "_trajs.json")
     q_names = [q_name for q_name in question_names if q_name in cr.columns]
     # Fill in missing values
@@ -45,7 +42,7 @@ for base in ["pilot1"]:
     assert not cr[cr[q_names] == np.nan].any().any()
     assert not cr[cr[q_names] == 6].any().any()
     if condition_ratings is not None:
-        condition_ratings = pd.concat([condition_ratings, cr])
+        condition_ratings = pd.concat([condition_ratings, cr], ignore_index=True)
         demos = pd.concat([demos, d])
         other_data = pd.concat([other_data, o])
     else:
@@ -76,17 +73,17 @@ print(genders[~genders.str.contains("ale")].to_string())
 print(len(workers), workers["Answer.age"].min(), workers["Answer.age"].max(), workers["Answer.age"].mean(), workers["Answer.age"].std())
 
 # Create factor loadings
+# See the factor analysis script for more exploration steps
 num_factors = 3
 exp_transformer = FactorAnalyzer(num_factors)
-analysis = exp_transformer.fit(condition_ratings[question_names].to_numpy())
+analysis = exp_transformer.fit(condition_ratings[short_question_names].to_numpy())
 print("Eignvalues:", analysis.get_eigenvalues())
 # Use this line to keep the model from the pilot
 # dump(exp_transformer, "factor_model.pickle")
 
-fa_plot = make_fa_plots(condition_ratings, analysis)
+fa_plot = make_fa_plots(condition_ratings, analysis, short_question_names)
 
-factor_names = ["factor" + str(i) for i in range(num_factors)]
-model_spec = ModelSpecificationParser.parse_model_specification_from_dict(condition_ratings[question_names].to_numpy(),
+model_spec = ModelSpecificationParser.parse_model_specification_from_dict(condition_ratings[short_question_names].to_numpy(),
                                                                           factor_structure)
 cfa = ConfirmatoryFactorAnalyzer(model_spec, max_iter=20000)
 questions_in_factor_order = [value for factor in factor_structure.values() for value in factor]
@@ -95,8 +92,6 @@ exp_transformer = load("factor_model.pickle")
 condition_ratings[factor_names] = exp_transformer.transform(condition_ratings[short_question_names].to_numpy())
 
 # factor_score_weights = pd.DataFrame(analysis.loadings_.T, columns=question_names)
-
-factor_names = ["factor" + str(i) for i in range(3)]
 
 
 cond_qual = []
@@ -139,11 +134,13 @@ for worker, group in demos_by_worker:
     print("")
     # print("")
 
-con_hists = []
+con_density_plots = []
 
+# Can be helpful to see an estimate of the distribution (via KDE)
+# But note that you may have very few samples per condition
 for condition_code, data in by_condition:
-    hists = make_density("Condition " + str(condition_code), data[factor_names])
-    con_hists.append(hists)
+    densities = make_density("Condition " + str(condition_code), data[factor_names])
+    con_density_plots.append(densities)
 
 """for condition_code, data in by_condition:
     hists = plot_histograms("Condition " + str(condition_code), question_names, data, upper_bound=6)
@@ -160,9 +157,15 @@ for question in question_names:
     fig = make_scatterplot(feature_names, question, condition_ratings)
     feat_v_attr_scatters.append(fig)"""
 
+fig = sns.pairplot(condition_ratings[factor_names])
+fig.set(xlim=(-3, 3))
+fig.set(ylim=(-3, 3))
+plt.show()
+
+
 with PdfPages('../data/plots.pdf') as pp:
     pp.savefig(fa_plot)
 
-    for fig in con_hists:
+    for fig in con_density_plots:
         pp.savefig(fig)
 
