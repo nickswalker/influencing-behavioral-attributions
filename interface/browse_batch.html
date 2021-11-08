@@ -30,7 +30,7 @@
         "length",
         "straight template match",
         "hook template match",
-        "carpet time",
+        "goal deviation",
         "collision time",
         "redundant coverage",
         "total coverage",
@@ -45,7 +45,7 @@
     let features = []
     let qual = []
     // load JSON data; then proceed
-    getJSON('sampled_pool.json').then(data => {
+    getJSON('study_corl/in.json').then(data => {
         trajectories = JSON.parse(data["trajectories"]
             .replace(/\(/g, '[')
             .replace(/\)/g, ']')

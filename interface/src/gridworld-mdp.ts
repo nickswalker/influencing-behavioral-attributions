@@ -59,14 +59,15 @@ export class Gridworld {
     private startState: GridworldState
     private terminalState: GridworldState
 
-    constructor(terrain: TerrainMap, startState = new GridworldState([{
-        x: 10,
-        y: 9
-    }]), terminalState = new GridworldState([{x: 10, y: 9}])) {
+    constructor(terrain: TerrainMap, startState: GridworldState,
+                terminalState: GridworldState = null) {
         this.terrain = terrain
         this.width = this.terrain[0].length
         this.height = this.terrain.length
         this.startState = startState
+        if (terminalState === null) {
+            terminalState = startState
+        }
         this.terminalState = terminalState
     }
 

@@ -8,7 +8,7 @@
 <!-- Seedable version of Math.random -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/seedrandom/3.0.1/seedrandom.min.js" integrity="sha256-qWhoVRXiPqipUCqo3Tl0NGx/o56OREtG1aaxJIOCSNs=" crossorigin="anonymous"></script>
 
-
+<!-- NOTE: You'll need to host the built javascript and the visual assets on a webserver if you want to put this straight into MTurk -->
 
 <script>
     function submitPage(evt) {
@@ -338,7 +338,7 @@
 <template id="demonstration">
     <div class="demonstration">
         <h2>Robot {{robotNumber}}: {{attribution}}</h2>
-        <gridworld-interactive map-name="house_goal" id="demo{{condition}}"></gridworld-interactive>
+        <gridworld-interactive map-name="house_goal" id="demo{{condition}}" start-x="10" start-y="9"></gridworld-interactive>
         <input {{required}} hidden name="con_{{condition}}_traj" value="[]"></input>
 
         <p>Please briefly explain how you made the robot seem {{attribution}}:</p>
@@ -358,8 +358,8 @@
 
             <p>This HIT has 2 parts; the first involves controlling a robot to clean a bedroom in a game, and the second involves watching and rating several videos of robots cleaning a bedroom.</p>
             
-            <img src="https://mturk.nickwalker.us/attribution/batch/8/assets/environment.png">
-            <!--img src="assets/environment.png"-->
+            <img img src="assets/environment.png">
+
             <p>
                 At the end, we'll ask your age and gender. Note that before we accept your work, we'll check for indications that you didn't follow instructions</p>
             <p>The whole task should take about 20 minutes. You <b class="green">can</b> complete this HIT multiple times.
@@ -410,7 +410,7 @@
             <h2>Part 1: Controlling the Robot</h2>
             <p>In this part, we'll tell you a style (like "curious" or "efficient") and ask you to make the robot clean the bedroom in that style. This can be tricky, but try to think of what you can make the robot do that would make someone watching say that it's behaving in the given style. You'll repeat this for a total of 2 styles. Here's the interface you'll use for controlling the robot:</p>
 
-            <gridworld-interactive id="instructional" map-name="house_goal"></gridworld-interactive>
+            <gridworld-interactive id="instructional" map-name="house_goal" start-x="10" start-y="9"></gridworld-interactive>
 
             <ul>
                 <li><b>Click on the interface</b> to enable the controls. Click elsewhere on the page to disable them.</li>
@@ -446,7 +446,7 @@
         <div class="page warm-up">
             <h2>Warm up</h2>
 
-            <p>Please watch this instructional video. All of the questions you'll be asked for each video are shown below. <b>Responses on this page are optional</b>, so please continue to the next page once you are familiar with the playback controls and questions.</p>
+            <p>Please watch this instructional video. All the questions you'll be asked for each video are shown below. <b>Responses on this page are optional</b>, so please continue to the next page once you are familiar with the playback controls and questions.</p>
 
             <div class="video-container">
                 <video controls disablePictureInPicture src="https://mturk.nickwalker.us/attribution/batch/8/assets/example.webm" class="requires-finished-to-seek unwatched"></video>
@@ -496,14 +496,12 @@
 
 <script>
     window.trajectoryIds = [0, 1, 2 ,3]
+
+    window.attributions = ["inquisitive", "lost"]
+    // Variables that MTurk will populate from the input CSV
     //window.trajectoryIds = [${id0}, ${id1}, ${id2}]
     // window.attributions = ["${aid0}", "${aid1}"]
-    window.attributions = ["inquisitive", "lost"]
 </script>
 
 <script src="dist/vendors.bundle.js" type="module"></script>
 <script src="dist/batch.bundle.js" type="module"></script>
-
-<!--
-<script src="https://mturk.nickwalker.us/attribution/batch/8/dist/vendors.bundle.js" type="module"></script>
-<script src="https://mturk.nickwalker.us/attribution/batch/8/dist/batch.bundle.js" type="module"></script>

@@ -22,7 +22,8 @@ export class GridworldGame {
         tileSize = 32,
         assetsLoc: string,
         mapName: string,
-        terrain: GridMap = null
+        terrain: GridMap = null,
+        initialState: GridworldState = null
     ) {
         if (tileSize === null) {
             tileSize = 32
@@ -33,11 +34,9 @@ export class GridworldGame {
 
         if (assetsLoc === null) {
             assetsLoc = "assets/"
-            // To make deployment expedient
-            // assetsLoc = "https://mturk.nickwalker.us/attribution/evaluation/1/assets/"
         }
         this.assetsPath = assetsLoc;
-        this.scene = new GridworldScene(this, tileSize, mapName, terrain)
+        this.scene = new GridworldScene(this, tileSize, mapName, terrain, initialState)
     }
 
     init() {
@@ -131,8 +130,9 @@ export class GridworldScene extends Phaser.Scene {
     waitBox: Phaser.GameObjects.Graphics
     interactionStarted: boolean
     interactionFinished: boolean
+    _initialState: GridworldState
 
-    constructor(gameParent: GridworldGame, tileSize: number, mapName: string = null, map: GridMap = null) {
+    constructor(gameParent: GridworldGame, tileSize: number, mapName: string = null, map: GridMap = null, initialState: GridworldState = null) {
         super({
             active: true,
             visible: true,
@@ -144,8 +144,10 @@ export class GridworldScene extends Phaser.Scene {
         this._interactive = false
         this.mapName = mapName
         if (map) {
-            this.mdp = new Gridworld(map.terrain)
+            this.mdp = new Gridworld(map.terrain, initialState)
         }
+        // If we can't draw right away because we're missing the map, keep this for later
+        this._initialState = initialState
     }
 
     set interactive(value: boolean) {
@@ -169,7 +171,6 @@ export class GridworldScene extends Phaser.Scene {
     }
 
     preload() {
-        // TODO(nickswalker): Fix handling of the hardcoded terrain case
         this.load.tilemapTiledJSON('map', this.gameParent.assetsPath + this.mapName + '.json');
         this.load.image('interior_tiles', this.gameParent.assetsPath + 'interior_tiles.png');
         this.load.image('agent', this.gameParent.assetsPath + 'roomba.png');
@@ -190,7 +191,7 @@ export class GridworldScene extends Phaser.Scene {
             }
         }
         this.map = map
-        this.mdp = new Gridworld(terrainMap)
+        this.mdp = new Gridworld(terrainMap, this._initialState)
         this.cursors = this.input.keyboard.createCursorKeys();
         this.spacebar = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
         this.sceneSprite = {'agents': []};
@@ -210,6 +211,7 @@ export class GridworldScene extends Phaser.Scene {
         this.currentState = this.mdp.getStartState()
 
         this._drawState(this.currentState, this.sceneSprite);
+        // HAX: Needed to prominently show the task to participants
         this._drawSpeechBubble("Robot, please clean the bedroom")
 
         const w = this.cameras.main.width
@@ -251,6 +253,8 @@ export class GridworldScene extends Phaser.Scene {
 
         }
         this.game.scale.resize(map.width * map.tileWidth, map.height * map.tileHeight)
+        // Use this if you want to dim the setting to make the trace stand out more
+        //const greyOverlay = this.add.rectangle(0,0, this.cameras.main.width * 2, this.cameras.main.height * 2, 0xFFFFFF, 0.4)
 
     }
 
@@ -263,6 +267,8 @@ export class GridworldScene extends Phaser.Scene {
         const startPos = trajectory[0]
         const path = new Phaser.Curves.Path(this.tileSize * startPos.x + hT, this.tileSize * startPos.y + hT)
 
+        // A slightly more visible style suited for showing traces
+        // this._trailGraphics.lineStyle(fT / 3, 0xbaed00, 0.8)
         this._trailGraphics.lineStyle(fT / 4, 0xa9cc29, 0.6)
         for (let i = 1; i < trajectory.length; i++) {
             const pos = trajectory[i]

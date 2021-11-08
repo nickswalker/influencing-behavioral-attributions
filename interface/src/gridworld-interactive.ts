@@ -26,11 +26,11 @@ export class GridworldInteractive extends HTMLElement {
     }
 
     attributeChangedCallback(name: string, oldValue: string, newValue: string) {
+        if (!this.getAttribute("terrain") && !this.getAttribute("map-name") && !this.getAttribute("start-x") && !this.getAttribute("start-y")) {
+            return;
+        }
         if (!this.gameContainer) {
             this.buildSkeleton()
-        }
-        if (!this.getAttribute("terrain") && !this.getAttribute("map-name")) {
-            return;
         }
         if (!this.game) {
             this.buildGame()
@@ -59,7 +59,7 @@ export class GridworldInteractive extends HTMLElement {
 
         const playback: any = document.createElement("gridworld-player")
         playback.setAttribute("map-name", this.getAttribute("map-name"))
-        playback.setAttribute("trajectory", "[]")
+        playback.setAttribute("trajectory", "[("+ this.getAttribute("start-x")+", " + this.getAttribute("start-y")+")]")
 
         this.shadow.append(playback)
 
@@ -103,7 +103,8 @@ export class GridworldInteractive extends HTMLElement {
             mapName = this.getAttribute("map-name")
         }
         this.trajectory = []
-        this.game = new GridworldGame(this.gameContainer, null, null, mapName, terrain)
+        let initialState = new GridworldState([{x:Number(this.getAttribute("start-x")), y:Number(this.getAttribute("start-y"))}])
+        this.game = new GridworldGame(this.gameContainer, null, null, mapName, terrain, initialState)
         this.game.sceneCreatedDelegate = () => {
             this.game.scene.interactive = true
             this.game.scene.reset()
